@@ -1,0 +1,12 @@
+{
+  "name": "market-hub-render-launcher",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "node bootstrap.js"
+  },
+  "dependencies": {
+    "adm-zip": "^0.5.16",
+    "pg": "^8.16.3"
+  }
+}
