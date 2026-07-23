@@ -14,17 +14,13 @@ function applyFastrrCheckoutFix() {
     "taxable: true, grams: Number(product.weight_grams || 500)",
     "taxable: true, quantity: Number(product.stock_quantity || 0), grams: Number(product.weight_grams || 500)"
   );
-  // Keep this object inline. It works on both a new installation and an
-  // already-running service where an earlier update did not load its helper.
-  const checkoutItem = "items.push({ variant_id: String(product.id), quantity, catalog_data: { price: Number(product.price_inr), name: String(product.name), image_url: product.image_url ? publicOrigin(request) + (String(product.image_url).startsWith('/') ? product.image_url : '/' + product.image_url) : '' } });";
-  source = source.replace('items.push({ variant_id: String(product.id), quantity });', checkoutItem);
+  // Fastrr validates checkout variants against its product catalogue. Sync the
+  // product first, then send only the documented variant_id and quantity fields.
+  const checkoutItem = "items.push({ variant_id: String(product.id), quantity });";
   source = source.replace('items.push(shiprocketCartItem(product, publicOrigin(request), quantity));', checkoutItem);
-  // catalog_data above is enough for Custom Checkout. Avoid making a separate
-  // product-webhook request on every customer checkout, as it can fail while a
-  // new Shiprocket account finishes catalogue activation.
   source = source.replace(
-    /if \(!seen\.has\(sku\)\) \{\s*\/\/ Shiprocket Checkout needs each product[\s\S]*?seen\.add\(sku\);\s*\}/,
-    'if (!seen.has(sku)) { seen.add(sku); }'
+    /if \(!seen\.has\(sku\)\) \{\s*\/\/ catalog_data is sent with the checkout item below\.[\s\S]*?seen\.add\(sku\);\s*\}/,
+    "if (!seen.has(sku)) { await shiprocketCheckout('/wh/v1/custom/product', shiprocketProductPayload(product, publicOrigin(request))); seen.add(sku); }"
   );
   if (source !== before) fs.writeFileSync(serverFile, source);
 }
