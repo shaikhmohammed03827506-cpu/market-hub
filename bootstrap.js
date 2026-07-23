@@ -19,6 +19,13 @@ function applyFastrrCheckoutFix() {
   const checkoutItem = "items.push({ variant_id: String(product.id), quantity, catalog_data: { price: Number(product.price_inr), name: String(product.name), image_url: product.image_url ? publicOrigin(request) + (String(product.image_url).startsWith('/') ? product.image_url : '/' + product.image_url) : '' } });";
   source = source.replace('items.push({ variant_id: String(product.id), quantity });', checkoutItem);
   source = source.replace('items.push(shiprocketCartItem(product, publicOrigin(request), quantity));', checkoutItem);
+  // catalog_data above is enough for Custom Checkout. Avoid making a separate
+  // product-webhook request on every customer checkout, as it can fail while a
+  // new Shiprocket account finishes catalogue activation.
+  source = source.replace(
+    /if \(!seen\.has\(sku\)\) \{\s*\/\/ Shiprocket Checkout needs each product[\s\S]*?seen\.add\(sku\);\s*\}/,
+    'if (!seen.has(sku)) { seen.add(sku); }'
+  );
   if (source !== before) fs.writeFileSync(serverFile, source);
 }
 
