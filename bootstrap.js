@@ -9,17 +9,17 @@ function applyFastrrCheckoutFix() {
   const serverFile = path.join(appDirectory, 'server.js');
   if (!fs.existsSync(serverFile)) return;
   let source = fs.readFileSync(serverFile, 'utf8');
-  if (source.includes('function shiprocketCartItem(')) return;
   const before = source;
   source = source.replace(
     "taxable: true, grams: Number(product.weight_grams || 500)",
     "taxable: true, quantity: Number(product.stock_quantity || 0), grams: Number(product.weight_grams || 500)"
   );
-  const cartHelper = `\n// Include trusted product details in each checkout request. This prevents a newly\n// enabled Shiprocket Checkout account from rejecting an item while it is syncing.\nfunction shiprocketCartItem(product, origin, quantity) {\n  const imageUrl = product.image_url ? origin + (product.image_url.startsWith('/') ? product.image_url : '/' + product.image_url) : '';\n  return { variant_id: String(product.id), quantity, catalog_data: { price: Number(product.price_inr), name: String(product.name), image_url: imageUrl } };\n}\n`;
-  source = source.replace('\nfunction prepareShiprocketCart(request, cart) {', `${cartHelper}\nfunction prepareShiprocketCart(request, cart) {`);
-  source = source.replace('items.push({ variant_id: String(product.id), quantity });', 'items.push(shiprocketCartItem(product, publicOrigin(request), quantity));');
-  if (source === before) throw new Error('Could not apply the Shiprocket Checkout update.');
-  fs.writeFileSync(serverFile, source);
+  // Keep this object inline. It works on both a new installation and an
+  // already-running service where an earlier update did not load its helper.
+  const checkoutItem = "items.push({ variant_id: String(product.id), quantity, catalog_data: { price: Number(product.price_inr), name: String(product.name), image_url: product.image_url ? publicOrigin(request) + (String(product.image_url).startsWith('/') ? product.image_url : '/' + product.image_url) : '' } });";
+  source = source.replace('items.push({ variant_id: String(product.id), quantity });', checkoutItem);
+  source = source.replace('items.push(shiprocketCartItem(product, publicOrigin(request), quantity));', checkoutItem);
+  if (source !== before) fs.writeFileSync(serverFile, source);
 }
 
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
