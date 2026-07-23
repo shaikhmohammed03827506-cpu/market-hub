@@ -15,7 +15,7 @@ function applyFastrrCheckoutFix() {
     "taxable: true, grams: Number(product.weight_grams || 500)",
     "taxable: true, quantity: Number(product.stock_quantity || 0), grams: Number(product.weight_grams || 500)"
   );
-  const cartHelper = `\n// Include trusted product details in each checkout request. This prevents a newly\n// enabled Shiprocket Checkout account from rejecting an item while it is syncing.\nfunction shiprocketCartItem(product, origin, quantity) {\n  const imageUrl = product.image_url ? \`${origin}\${product.image_url.startsWith('/') ? product.image_url : \`/\${product.image_url}\`}\` : '';\n  return { variant_id: String(product.id), quantity, catalog_data: { price: Number(product.price_inr), name: String(product.name), image_url: imageUrl } };\n}\n`;
+  const cartHelper = `\n// Include trusted product details in each checkout request. This prevents a newly\n// enabled Shiprocket Checkout account from rejecting an item while it is syncing.\nfunction shiprocketCartItem(product, origin, quantity) {\n  const imageUrl = product.image_url ? origin + (product.image_url.startsWith('/') ? product.image_url : '/' + product.image_url) : '';\n  return { variant_id: String(product.id), quantity, catalog_data: { price: Number(product.price_inr), name: String(product.name), image_url: imageUrl } };\n}\n`;
   source = source.replace('\nfunction prepareShiprocketCart(request, cart) {', `${cartHelper}\nfunction prepareShiprocketCart(request, cart) {`);
   source = source.replace('items.push({ variant_id: String(product.id), quantity });', 'items.push(shiprocketCartItem(product, publicOrigin(request), quantity));');
   if (source === before) throw new Error('Could not apply the Shiprocket Checkout update.');
