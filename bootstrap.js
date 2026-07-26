@@ -5,6 +5,8 @@ const AdmZip = require('adm-zip');
 const appDirectory = path.join(__dirname, 'app');
 const checkoutPatchFile = path.join(__dirname, 'market-hub-v26-shiprocket-checkout.zip');
 const checkoutPatchMarker = path.join(appDirectory, '.market-hub-v26-shiprocket-checkout');
+const customerExperiencePatchFile = path.join(__dirname, 'market-hub-v27-customer-experience.zip');
+const customerExperiencePatchMarker = path.join(appDirectory, '.market-hub-v27-customer-experience');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -13,6 +15,15 @@ function applyCheckoutPatch() {
   }
   new AdmZip(checkoutPatchFile).extractAllTo(appDirectory, true);
   fs.writeFileSync(checkoutPatchMarker, 'v26 shiprocket checkout patch applied\n');
+}
+
+function applyCustomerExperiencePatch() {
+  if (fs.existsSync(customerExperiencePatchMarker)) return;
+  if (!fs.existsSync(customerExperiencePatchFile)) {
+    throw new Error('Required customer experience patch is missing: market-hub-v27-customer-experience.zip');
+  }
+  new AdmZip(customerExperiencePatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(customerExperiencePatchMarker, 'v27 customer experience patch applied\n');
 }
 
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
@@ -42,4 +53,5 @@ if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v25-auth-redirect.zip')).extractAllTo(appDirectory, true);
 }
 applyCheckoutPatch();
+applyCustomerExperiencePatch();
 require(path.join(appDirectory, 'server.js'));
