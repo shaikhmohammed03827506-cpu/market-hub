@@ -25,6 +25,8 @@ const aiShoppingV351PatchFile = path.join(__dirname, 'market-hub-v35-1-ai-shoppi
 const aiShoppingV351PatchMarker = path.join(appDirectory, '.market-hub-v35-1-ai-shopping-core');
 const smartDiscoveryV352PatchFile = path.join(__dirname, 'market-hub-v35-2-smart-discovery.zip');
 const smartDiscoveryV352PatchMarker = path.join(appDirectory, '.market-hub-v35-2-smart-discovery');
+const aiAdminV353PatchFile = path.join(__dirname, 'market-hub-v35-3-ai-admin-assistant.zip');
+const aiAdminV353PatchMarker = path.join(appDirectory, '.market-hub-v35-3-ai-admin-assistant');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -109,6 +111,13 @@ function applySmartDiscoveryV352Patch() {
   fs.writeFileSync(smartDiscoveryV352PatchMarker, 'v35.2 smart discovery patch applied\n');
 }
 
+function applyAiAdminV353Patch() {
+  if (fs.existsSync(aiAdminV353PatchMarker)) return;
+  if (!fs.existsSync(aiAdminV353PatchFile)) throw new Error('Required v35.3 admin assistant patch is missing: market-hub-v35-3-ai-admin-assistant.zip');
+  new AdmZip(aiAdminV353PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(aiAdminV353PatchMarker, 'v35.3 business intelligence patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -146,4 +155,5 @@ applyLuxuryExperienceV33Patch();
 applyFinalProductionV34Patch();
 applyAiShoppingV351Patch();
 applySmartDiscoveryV352Patch();
+applyAiAdminV353Patch();
 require(path.join(appDirectory, 'server.js'));
