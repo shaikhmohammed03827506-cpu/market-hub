@@ -7,6 +7,8 @@ const checkoutPatchFile = path.join(__dirname, 'market-hub-v26-shiprocket-checko
 const checkoutPatchMarker = path.join(appDirectory, '.market-hub-v26-shiprocket-checkout');
 const customerExperiencePatchFile = path.join(__dirname, 'market-hub-v27-customer-experience.zip');
 const customerExperiencePatchMarker = path.join(appDirectory, '.market-hub-v27-customer-experience');
+const smartSlideCartPatchFile = path.join(__dirname, 'market-hub-v28-smart-slide-cart.zip');
+const smartSlideCartPatchMarker = path.join(appDirectory, '.market-hub-v28-smart-slide-cart');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -24,6 +26,15 @@ function applyCustomerExperiencePatch() {
   }
   new AdmZip(customerExperiencePatchFile).extractAllTo(appDirectory, true);
   fs.writeFileSync(customerExperiencePatchMarker, 'v27 customer experience patch applied\n');
+}
+
+function applySmartSlideCartPatch() {
+  if (fs.existsSync(smartSlideCartPatchMarker)) return;
+  if (!fs.existsSync(smartSlideCartPatchFile)) {
+    throw new Error('Required smart slide cart patch is missing: market-hub-v28-smart-slide-cart.zip');
+  }
+  new AdmZip(smartSlideCartPatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(smartSlideCartPatchMarker, 'v28 smart slide cart patch applied\n');
 }
 
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
@@ -54,4 +65,5 @@ if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
 }
 applyCheckoutPatch();
 applyCustomerExperiencePatch();
+applySmartSlideCartPatch();
 require(path.join(appDirectory, 'server.js'));
