@@ -23,6 +23,8 @@ const finalProductionV34PatchFile = path.join(__dirname, 'market-hub-v34-final-p
 const finalProductionV34PatchMarker = path.join(appDirectory, '.market-hub-v34-final-production');
 const aiShoppingV351PatchFile = path.join(__dirname, 'market-hub-v35-1-ai-shopping-core.zip');
 const aiShoppingV351PatchMarker = path.join(appDirectory, '.market-hub-v35-1-ai-shopping-core');
+const smartDiscoveryV352PatchFile = path.join(__dirname, 'market-hub-v35-2-smart-discovery.zip');
+const smartDiscoveryV352PatchMarker = path.join(appDirectory, '.market-hub-v35-2-smart-discovery');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -100,6 +102,13 @@ function applyAiShoppingV351Patch() {
   fs.writeFileSync(aiShoppingV351PatchMarker, 'v35.1 smart recommendation patch applied\n');
 }
 
+function applySmartDiscoveryV352Patch() {
+  if (fs.existsSync(smartDiscoveryV352PatchMarker)) return;
+  if (!fs.existsSync(smartDiscoveryV352PatchFile)) throw new Error('Required v35.2 smart discovery patch is missing: market-hub-v35-2-smart-discovery.zip');
+  new AdmZip(smartDiscoveryV352PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(smartDiscoveryV352PatchMarker, 'v35.2 smart discovery patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -136,4 +145,5 @@ applyPremiumRenovationV32Patch();
 applyLuxuryExperienceV33Patch();
 applyFinalProductionV34Patch();
 applyAiShoppingV351Patch();
+applySmartDiscoveryV352Patch();
 require(path.join(appDirectory, 'server.js'));
