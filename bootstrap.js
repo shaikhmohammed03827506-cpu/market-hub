@@ -9,6 +9,8 @@ const customerExperiencePatchFile = path.join(__dirname, 'market-hub-v27-custome
 const customerExperiencePatchMarker = path.join(appDirectory, '.market-hub-v27-customer-experience');
 const smartSlideCartPatchFile = path.join(__dirname, 'market-hub-v28-smart-slide-cart.zip');
 const smartSlideCartPatchMarker = path.join(appDirectory, '.market-hub-v28-smart-slide-cart');
+const customerExperienceV29PatchFile = path.join(__dirname, 'market-hub-v29-customer-experience.zip');
+const customerExperienceV29PatchMarker = path.join(appDirectory, '.market-hub-v29-customer-experience');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -35,6 +37,13 @@ function applySmartSlideCartPatch() {
   }
   new AdmZip(smartSlideCartPatchFile).extractAllTo(appDirectory, true);
   fs.writeFileSync(smartSlideCartPatchMarker, 'v28 smart slide cart patch applied\n');
+}
+
+function applyCustomerExperienceV29Patch() {
+  if (fs.existsSync(customerExperienceV29PatchMarker)) return;
+  if (!fs.existsSync(customerExperienceV29PatchFile)) throw new Error('Required v29 customer experience patch is missing: market-hub-v29-customer-experience.zip');
+  new AdmZip(customerExperienceV29PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(customerExperienceV29PatchMarker, 'v29 customer experience patch applied\n');
 }
 
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
@@ -66,4 +75,5 @@ if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
 applyCheckoutPatch();
 applyCustomerExperiencePatch();
 applySmartSlideCartPatch();
+applyCustomerExperienceV29Patch();
 require(path.join(appDirectory, 'server.js'));
