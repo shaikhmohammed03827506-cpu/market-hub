@@ -33,6 +33,8 @@ const marketplaceV37PatchFile = path.join(__dirname, 'market-hub-v37-omnichannel
 const marketplaceV37PatchMarker = path.join(appDirectory, '.market-hub-v37-omnichannel-marketplace');
 const enterpriseV38PatchFile = path.join(__dirname, 'market-hub-v38-ultimate-enterprise-edition.zip');
 const enterpriseV38PatchMarker = path.join(appDirectory, '.market-hub-v38-ultimate-enterprise-edition');
+const mobileV39PatchFile = path.join(__dirname, 'market-hub-v39-mobile-commerce-suite.zip');
+const mobileV39PatchMarker = path.join(appDirectory, '.market-hub-v39-mobile-commerce-suite');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -145,6 +147,13 @@ function applyEnterpriseV38Patch() {
   fs.writeFileSync(enterpriseV38PatchMarker, 'v38 enterprise patch applied\n');
 }
 
+function applyMobileV39Patch() {
+  if (fs.existsSync(mobileV39PatchMarker)) return;
+  if (!fs.existsSync(mobileV39PatchFile)) throw new Error('Required v39 mobile commerce patch is missing: market-hub-v39-mobile-commerce-suite.zip');
+  new AdmZip(mobileV39PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(mobileV39PatchMarker, 'v39 mobile commerce patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -186,4 +195,5 @@ applyAiAdminV353Patch();
 applyMarketingV36Patch();
 applyMarketplaceV37Patch();
 applyEnterpriseV38Patch();
+applyMobileV39Patch();
 require(path.join(appDirectory, 'server.js'));
