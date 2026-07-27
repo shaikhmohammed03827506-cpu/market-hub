@@ -31,6 +31,8 @@ const marketingV36PatchFile = path.join(__dirname, 'market-hub-v36-marketing-aut
 const marketingV36PatchMarker = path.join(appDirectory, '.market-hub-v36-marketing-automation-suite');
 const marketplaceV37PatchFile = path.join(__dirname, 'market-hub-v37-omnichannel-marketplace.zip');
 const marketplaceV37PatchMarker = path.join(appDirectory, '.market-hub-v37-omnichannel-marketplace');
+const enterpriseV38PatchFile = path.join(__dirname, 'market-hub-v38-ultimate-enterprise-edition.zip');
+const enterpriseV38PatchMarker = path.join(appDirectory, '.market-hub-v38-ultimate-enterprise-edition');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -136,6 +138,13 @@ function applyMarketplaceV37Patch() {
   fs.writeFileSync(marketplaceV37PatchMarker, 'v37 omnichannel marketplace patch applied\n');
 }
 
+function applyEnterpriseV38Patch() {
+  if (fs.existsSync(enterpriseV38PatchMarker)) return;
+  if (!fs.existsSync(enterpriseV38PatchFile)) throw new Error('Required v38 enterprise patch is missing: market-hub-v38-ultimate-enterprise-edition.zip');
+  new AdmZip(enterpriseV38PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(enterpriseV38PatchMarker, 'v38 enterprise patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -176,4 +185,5 @@ applySmartDiscoveryV352Patch();
 applyAiAdminV353Patch();
 applyMarketingV36Patch();
 applyMarketplaceV37Patch();
+applyEnterpriseV38Patch();
 require(path.join(appDirectory, 'server.js'));
