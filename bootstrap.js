@@ -11,6 +11,8 @@ const smartSlideCartPatchFile = path.join(__dirname, 'market-hub-v28-smart-slide
 const smartSlideCartPatchMarker = path.join(appDirectory, '.market-hub-v28-smart-slide-cart');
 const customerExperienceV29PatchFile = path.join(__dirname, 'market-hub-v29-customer-experience.zip');
 const customerExperienceV29PatchMarker = path.join(appDirectory, '.market-hub-v29-customer-experience');
+const premiumShoppingV30PatchFile = path.join(__dirname, 'market-hub-v30-premium-shopping.zip');
+const premiumShoppingV30PatchMarker = path.join(appDirectory, '.market-hub-v30-premium-shopping');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -46,6 +48,13 @@ function applyCustomerExperienceV29Patch() {
   fs.writeFileSync(customerExperienceV29PatchMarker, 'v29 customer experience patch applied\n');
 }
 
+function applyPremiumShoppingV30Patch() {
+  if (fs.existsSync(premiumShoppingV30PatchMarker)) return;
+  if (!fs.existsSync(premiumShoppingV30PatchFile)) throw new Error('Required v30 premium shopping patch is missing: market-hub-v30-premium-shopping.zip');
+  new AdmZip(premiumShoppingV30PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(premiumShoppingV30PatchMarker, 'v30 premium shopping patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -76,4 +85,5 @@ applyCheckoutPatch();
 applyCustomerExperiencePatch();
 applySmartSlideCartPatch();
 applyCustomerExperienceV29Patch();
+applyPremiumShoppingV30Patch();
 require(path.join(appDirectory, 'server.js'));
