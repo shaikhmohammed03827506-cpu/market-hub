@@ -21,6 +21,8 @@ const luxuryExperienceV33PatchFile = path.join(__dirname, 'market-hub-v33-luxury
 const luxuryExperienceV33PatchMarker = path.join(appDirectory, '.market-hub-v33-luxury-experience');
 const finalProductionV34PatchFile = path.join(__dirname, 'market-hub-v34-final-production.zip');
 const finalProductionV34PatchMarker = path.join(appDirectory, '.market-hub-v34-final-production');
+const aiShoppingV351PatchFile = path.join(__dirname, 'market-hub-v35-1-ai-shopping-core.zip');
+const aiShoppingV351PatchMarker = path.join(appDirectory, '.market-hub-v35-1-ai-shopping-core');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -91,6 +93,13 @@ function applyFinalProductionV34Patch() {
   fs.writeFileSync(finalProductionV34PatchMarker, 'v34 final production patch applied\n');
 }
 
+function applyAiShoppingV351Patch() {
+  if (fs.existsSync(aiShoppingV351PatchMarker)) return;
+  if (!fs.existsSync(aiShoppingV351PatchFile)) throw new Error('Required v35.1 AI shopping patch is missing: market-hub-v35-1-ai-shopping-core.zip');
+  new AdmZip(aiShoppingV351PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(aiShoppingV351PatchMarker, 'v35.1 smart recommendation patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -126,4 +135,5 @@ applyBusinessOperationsV31Patch();
 applyPremiumRenovationV32Patch();
 applyLuxuryExperienceV33Patch();
 applyFinalProductionV34Patch();
+applyAiShoppingV351Patch();
 require(path.join(appDirectory, 'server.js'));
