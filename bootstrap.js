@@ -29,6 +29,8 @@ const aiAdminV353PatchFile = path.join(__dirname, 'market-hub-v35-3-ai-admin-ass
 const aiAdminV353PatchMarker = path.join(appDirectory, '.market-hub-v35-3-ai-admin-assistant');
 const marketingV36PatchFile = path.join(__dirname, 'market-hub-v36-marketing-automation-suite.zip');
 const marketingV36PatchMarker = path.join(appDirectory, '.market-hub-v36-marketing-automation-suite');
+const marketplaceV37PatchFile = path.join(__dirname, 'market-hub-v37-omnichannel-marketplace.zip');
+const marketplaceV37PatchMarker = path.join(appDirectory, '.market-hub-v37-omnichannel-marketplace');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -127,6 +129,13 @@ function applyMarketingV36Patch() {
   fs.writeFileSync(marketingV36PatchMarker, 'v36 marketing automation patch applied\n');
 }
 
+function applyMarketplaceV37Patch() {
+  if (fs.existsSync(marketplaceV37PatchMarker)) return;
+  if (!fs.existsSync(marketplaceV37PatchFile)) throw new Error('Required v37 omnichannel marketplace patch is missing: market-hub-v37-omnichannel-marketplace.zip');
+  new AdmZip(marketplaceV37PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(marketplaceV37PatchMarker, 'v37 omnichannel marketplace patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -166,4 +175,5 @@ applyAiShoppingV351Patch();
 applySmartDiscoveryV352Patch();
 applyAiAdminV353Patch();
 applyMarketingV36Patch();
+applyMarketplaceV37Patch();
 require(path.join(appDirectory, 'server.js'));
