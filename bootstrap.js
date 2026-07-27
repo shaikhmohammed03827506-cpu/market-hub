@@ -13,6 +13,8 @@ const customerExperienceV29PatchFile = path.join(__dirname, 'market-hub-v29-cust
 const customerExperienceV29PatchMarker = path.join(appDirectory, '.market-hub-v29-customer-experience');
 const premiumShoppingV30PatchFile = path.join(__dirname, 'market-hub-v30-premium-shopping.zip');
 const premiumShoppingV30PatchMarker = path.join(appDirectory, '.market-hub-v30-premium-shopping');
+const businessOperationsV31PatchFile = path.join(__dirname, 'market-hub-v31-business-operations.zip');
+const businessOperationsV31PatchMarker = path.join(appDirectory, '.market-hub-v31-business-operations');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -55,6 +57,13 @@ function applyPremiumShoppingV30Patch() {
   fs.writeFileSync(premiumShoppingV30PatchMarker, 'v30 premium shopping patch applied\n');
 }
 
+function applyBusinessOperationsV31Patch() {
+  if (fs.existsSync(businessOperationsV31PatchMarker)) return;
+  if (!fs.existsSync(businessOperationsV31PatchFile)) throw new Error('Required v31 business operations patch is missing: market-hub-v31-business-operations.zip');
+  new AdmZip(businessOperationsV31PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(businessOperationsV31PatchMarker, 'v31 business operations patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -86,4 +95,5 @@ applyCustomerExperiencePatch();
 applySmartSlideCartPatch();
 applyCustomerExperienceV29Patch();
 applyPremiumShoppingV30Patch();
+applyBusinessOperationsV31Patch();
 require(path.join(appDirectory, 'server.js'));
