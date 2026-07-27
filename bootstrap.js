@@ -19,6 +19,8 @@ const premiumRenovationV32PatchFile = path.join(__dirname, 'market-hub-v32-premi
 const premiumRenovationV32PatchMarker = path.join(appDirectory, '.market-hub-v32-premium-renovation');
 const luxuryExperienceV33PatchFile = path.join(__dirname, 'market-hub-v33-luxury-experience.zip');
 const luxuryExperienceV33PatchMarker = path.join(appDirectory, '.market-hub-v33-luxury-experience');
+const finalProductionV34PatchFile = path.join(__dirname, 'market-hub-v34-final-production.zip');
+const finalProductionV34PatchMarker = path.join(appDirectory, '.market-hub-v34-final-production');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -82,6 +84,13 @@ function applyLuxuryExperienceV33Patch() {
   fs.writeFileSync(luxuryExperienceV33PatchMarker, 'v33 luxury experience patch applied\n');
 }
 
+function applyFinalProductionV34Patch() {
+  if (fs.existsSync(finalProductionV34PatchMarker)) return;
+  if (!fs.existsSync(finalProductionV34PatchFile)) throw new Error('Required v34 final production patch is missing: market-hub-v34-final-production.zip');
+  new AdmZip(finalProductionV34PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(finalProductionV34PatchMarker, 'v34 final production patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -116,4 +125,5 @@ applyPremiumShoppingV30Patch();
 applyBusinessOperationsV31Patch();
 applyPremiumRenovationV32Patch();
 applyLuxuryExperienceV33Patch();
+applyFinalProductionV34Patch();
 require(path.join(appDirectory, 'server.js'));
