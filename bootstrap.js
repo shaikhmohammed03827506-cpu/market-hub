@@ -15,6 +15,8 @@ const premiumShoppingV30PatchFile = path.join(__dirname, 'market-hub-v30-premium
 const premiumShoppingV30PatchMarker = path.join(appDirectory, '.market-hub-v30-premium-shopping');
 const businessOperationsV31PatchFile = path.join(__dirname, 'market-hub-v31-business-operations.zip');
 const businessOperationsV31PatchMarker = path.join(appDirectory, '.market-hub-v31-business-operations');
+const premiumRenovationV32PatchFile = path.join(__dirname, 'market-hub-v32-premium-renovation.zip');
+const premiumRenovationV32PatchMarker = path.join(appDirectory, '.market-hub-v32-premium-renovation');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -64,6 +66,13 @@ function applyBusinessOperationsV31Patch() {
   fs.writeFileSync(businessOperationsV31PatchMarker, 'v31 business operations patch applied\n');
 }
 
+function applyPremiumRenovationV32Patch() {
+  if (fs.existsSync(premiumRenovationV32PatchMarker)) return;
+  if (!fs.existsSync(premiumRenovationV32PatchFile)) throw new Error('Required v32 premium renovation patch is missing: market-hub-v32-premium-renovation.zip');
+  new AdmZip(premiumRenovationV32PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(premiumRenovationV32PatchMarker, 'v32 premium renovation patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -96,4 +105,5 @@ applySmartSlideCartPatch();
 applyCustomerExperienceV29Patch();
 applyPremiumShoppingV30Patch();
 applyBusinessOperationsV31Patch();
+applyPremiumRenovationV32Patch();
 require(path.join(appDirectory, 'server.js'));
