@@ -35,7 +35,7 @@ const enterpriseV38PatchFile = path.join(__dirname, 'market-hub-v38-ultimate-ent
 const enterpriseV38PatchMarker = path.join(appDirectory, '.market-hub-v38-ultimate-enterprise-edition');
 const mobileV39PatchFile = path.join(__dirname, 'market-hub-v39-mobile-commerce-suite.zip');
 // v39 hotfix marker forces existing deployments to extract the updated v39 archive once.
-const mobileV39PatchMarker = path.join(appDirectory, '.market-hub-v39-mobile-commerce-suite-hotfix-3');
+const mobileV39PatchMarker = path.join(appDirectory, '.market-hub-v39-mobile-pwa-hotfix-4');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -152,7 +152,7 @@ function applyMobileV39Patch() {
   if (fs.existsSync(mobileV39PatchMarker)) return;
   if (!fs.existsSync(mobileV39PatchFile)) throw new Error('Required v39 mobile commerce patch is missing: market-hub-v39-mobile-commerce-suite.zip');
   new AdmZip(mobileV39PatchFile).extractAllTo(appDirectory, true);
-  fs.writeFileSync(mobileV39PatchMarker, 'v39 scoped-observer hotfix patch applied\n');
+  fs.writeFileSync(mobileV39PatchMarker, 'v39 mobile PWA hotfix patch applied\n');
 }
 
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
