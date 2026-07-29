@@ -40,6 +40,8 @@ const storefrontV40PatchFile = path.join(__dirname, 'market-hub-v40-universal-sm
 const storefrontV40PatchMarker = path.join(appDirectory, '.market-hub-v40-global-cart-wishlist-hotfix-1');
 const customerAccountV41PatchFile = path.join(__dirname, 'market-hub-v41-customer-account-orders.zip');
 const customerAccountV41PatchMarker = path.join(appDirectory, '.market-hub-v41-customer-account-orders');
+const orderAccountV42PatchFile = path.join(__dirname, 'market-hub-v42-order-account-linking.zip');
+const orderAccountV42PatchMarker = path.join(appDirectory, '.market-hub-v42-order-account-linking');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -173,6 +175,13 @@ function applyCustomerAccountV41Patch() {
   fs.writeFileSync(customerAccountV41PatchMarker, 'v41 customer account and order management applied\n');
 }
 
+function applyOrderAccountV42Patch() {
+  if (fs.existsSync(orderAccountV42PatchMarker)) return;
+  if (!fs.existsSync(orderAccountV42PatchFile)) throw new Error('Required v42 order account linking patch is missing: market-hub-v42-order-account-linking.zip');
+  new AdmZip(orderAccountV42PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(orderAccountV42PatchMarker, 'v42 order account linking patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -217,4 +226,5 @@ applyEnterpriseV38Patch();
 applyMobileV39Patch();
 applyStorefrontV40Patch();
 applyCustomerAccountV41Patch();
+applyOrderAccountV42Patch();
 require(path.join(appDirectory, 'server.js'));
