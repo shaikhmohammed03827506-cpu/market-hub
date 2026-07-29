@@ -36,6 +36,8 @@ const enterpriseV38PatchMarker = path.join(appDirectory, '.market-hub-v38-ultima
 const mobileV39PatchFile = path.join(__dirname, 'market-hub-v39-mobile-commerce-suite.zip');
 // v39 hotfix marker forces existing deployments to extract the updated v39 archive once.
 const mobileV39PatchMarker = path.join(appDirectory, '.market-hub-v39-mobile-pwa-hotfix-4');
+const storefrontV40PatchFile = path.join(__dirname, 'market-hub-v40-universal-smart-cart.zip');
+const storefrontV40PatchMarker = path.join(appDirectory, '.market-hub-v40-universal-smart-cart');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -155,6 +157,13 @@ function applyMobileV39Patch() {
   fs.writeFileSync(mobileV39PatchMarker, 'v39 mobile PWA hotfix patch applied\n');
 }
 
+function applyStorefrontV40Patch() {
+  if (fs.existsSync(storefrontV40PatchMarker)) return;
+  if (!fs.existsSync(storefrontV40PatchFile)) throw new Error('Required v40 storefront patch is missing: market-hub-v40-universal-smart-cart.zip');
+  new AdmZip(storefrontV40PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(storefrontV40PatchMarker, 'v40 universal smart cart and paginated storefront applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -197,4 +206,5 @@ applyMarketingV36Patch();
 applyMarketplaceV37Patch();
 applyEnterpriseV38Patch();
 applyMobileV39Patch();
+applyStorefrontV40Patch();
 require(path.join(appDirectory, 'server.js'));
