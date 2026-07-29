@@ -42,6 +42,8 @@ const customerAccountV41PatchFile = path.join(__dirname, 'market-hub-v41-custome
 const customerAccountV41PatchMarker = path.join(appDirectory, '.market-hub-v41-customer-account-orders');
 const orderAccountV42PatchFile = path.join(__dirname, 'market-hub-v42-order-account-linking.zip');
 const orderAccountV42PatchMarker = path.join(appDirectory, '.market-hub-v42-order-account-linking');
+const navigationV411PatchFile = path.join(__dirname, 'market-hub-v41-1-mobile-navigation-auth.zip');
+const navigationV411PatchMarker = path.join(appDirectory, '.market-hub-v41-1-mobile-navigation-auth');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -182,6 +184,13 @@ function applyOrderAccountV42Patch() {
   fs.writeFileSync(orderAccountV42PatchMarker, 'v42 order account linking patch applied\n');
 }
 
+function applyNavigationV411Patch() {
+  if (fs.existsSync(navigationV411PatchMarker)) return;
+  if (!fs.existsSync(navigationV411PatchFile)) throw new Error('Required v41.1 navigation patch is missing: market-hub-v41-1-mobile-navigation-auth.zip');
+  new AdmZip(navigationV411PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(navigationV411PatchMarker, 'v41.1 mobile navigation and separate authentication applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -227,4 +236,5 @@ applyMobileV39Patch();
 applyStorefrontV40Patch();
 applyCustomerAccountV41Patch();
 applyOrderAccountV42Patch();
+applyNavigationV411Patch();
 require(path.join(appDirectory, 'server.js'));
