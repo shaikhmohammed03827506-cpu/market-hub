@@ -38,6 +38,8 @@ const mobileV39PatchFile = path.join(__dirname, 'market-hub-v39-mobile-commerce-
 const mobileV39PatchMarker = path.join(appDirectory, '.market-hub-v39-mobile-pwa-hotfix-4');
 const storefrontV40PatchFile = path.join(__dirname, 'market-hub-v40-universal-smart-cart.zip');
 const storefrontV40PatchMarker = path.join(appDirectory, '.market-hub-v40-global-cart-wishlist-hotfix-1');
+const customerAccountV41PatchFile = path.join(__dirname, 'market-hub-v41-customer-account-orders.zip');
+const customerAccountV41PatchMarker = path.join(appDirectory, '.market-hub-v41-customer-account-orders');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -164,6 +166,13 @@ function applyStorefrontV40Patch() {
   fs.writeFileSync(storefrontV40PatchMarker, 'v40 global cart and wishlist hotfix 1 applied\n');
 }
 
+function applyCustomerAccountV41Patch() {
+  if (fs.existsSync(customerAccountV41PatchMarker)) return;
+  if (!fs.existsSync(customerAccountV41PatchFile)) throw new Error('Required v41 customer account patch is missing: market-hub-v41-customer-account-orders.zip');
+  new AdmZip(customerAccountV41PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(customerAccountV41PatchMarker, 'v41 customer account and order management applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -207,4 +216,5 @@ applyMarketplaceV37Patch();
 applyEnterpriseV38Patch();
 applyMobileV39Patch();
 applyStorefrontV40Patch();
+applyCustomerAccountV41Patch();
 require(path.join(appDirectory, 'server.js'));
