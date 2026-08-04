@@ -46,6 +46,8 @@ const navigationV411PatchFile = path.join(__dirname, 'market-hub-v41-1-mobile-na
 const navigationV411PatchMarker = path.join(appDirectory, '.market-hub-v41-1-mobile-navigation-auth');
 const smartImportV42PatchFile = path.join(__dirname, 'market-hub-v42-smart-product-import-suite.zip');
 const smartImportV42PatchMarker = path.join(appDirectory, '.market-hub-v42-smart-product-import-suite');
+const amazonImportV421PatchFile = path.join(__dirname, 'market-hub-v42-1-amazon-link-import.zip');
+const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-amazon-link-import');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -200,6 +202,13 @@ function applySmartImportV42Patch() {
   fs.writeFileSync(smartImportV42PatchMarker, 'v42 smart product import suite applied\n');
 }
 
+function applyAmazonImportV421Patch() {
+  if (fs.existsSync(amazonImportV421PatchMarker)) return;
+  if (!fs.existsSync(amazonImportV421PatchFile)) throw new Error('Required v42.1 Amazon Link Import patch is missing.');
+  new AdmZip(amazonImportV421PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(amazonImportV421PatchMarker, 'v42.1 Amazon link import workflow applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -247,4 +256,5 @@ applyCustomerAccountV41Patch();
 applyOrderAccountV42Patch();
 applyNavigationV411Patch();
 applySmartImportV42Patch();
+applyAmazonImportV421Patch();
 require(path.join(appDirectory, 'server.js'));
