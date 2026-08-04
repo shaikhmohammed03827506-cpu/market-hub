@@ -47,7 +47,7 @@ const navigationV411PatchMarker = path.join(appDirectory, '.market-hub-v41-1-mob
 const smartImportV42PatchFile = path.join(__dirname, 'market-hub-v42-smart-product-import-suite.zip');
 const smartImportV42PatchMarker = path.join(appDirectory, '.market-hub-v42-smart-product-import-suite');
 const amazonImportV421PatchFile = path.join(__dirname, 'market-hub-v42-1-amazon-link-import.zip');
-const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-amazon-link-import');
+const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-amazon-link-import-hotfix-1');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
