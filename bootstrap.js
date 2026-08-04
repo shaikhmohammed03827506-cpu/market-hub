@@ -50,6 +50,8 @@ const amazonImportV421PatchFile = path.join(__dirname, 'market-hub-v42-1-amazon-
 const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-draft-publish-workflow-1');
 const productVariantsV43PatchFile = path.join(__dirname, 'market-hub-v43-complete-product-variants.zip');
 const productVariantsV43PatchMarker = path.join(appDirectory, '.market-hub-v43-complete-product-variants-1');
+const latestAppV43PatchFile = path.join(__dirname, 'market-hub-v43-latest-app-download.zip');
+const latestAppV43PatchMarker = path.join(appDirectory, '.market-hub-v43-latest-app-download');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -218,6 +220,13 @@ function applyProductVariantsV43Patch() {
   fs.writeFileSync(productVariantsV43PatchMarker, 'v43 complete product variant system applied\n');
 }
 
+function applyLatestAppV43Patch() {
+  if (fs.existsSync(latestAppV43PatchMarker)) return;
+  if (!fs.existsSync(latestAppV43PatchFile)) throw new Error('Required v43 latest app patch is missing: market-hub-v43-latest-app-download.zip');
+  new AdmZip(latestAppV43PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(latestAppV43PatchMarker, 'v43 latest app download patch applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -267,4 +276,5 @@ applyNavigationV411Patch();
 applySmartImportV42Patch();
 applyAmazonImportV421Patch();
 applyProductVariantsV43Patch();
+applyLatestAppV43Patch();
 require(path.join(appDirectory, 'server.js'));
