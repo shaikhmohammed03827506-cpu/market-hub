@@ -44,6 +44,8 @@ const orderAccountV42PatchFile = path.join(__dirname, 'market-hub-v42-order-acco
 const orderAccountV42PatchMarker = path.join(appDirectory, '.market-hub-v42-order-account-linking');
 const navigationV411PatchFile = path.join(__dirname, 'market-hub-v41-1-mobile-navigation-auth.zip');
 const navigationV411PatchMarker = path.join(appDirectory, '.market-hub-v41-1-mobile-navigation-auth');
+const smartImportV42PatchFile = path.join(__dirname, 'market-hub-v42-smart-product-import-suite.zip');
+const smartImportV42PatchMarker = path.join(appDirectory, '.market-hub-v42-smart-product-import-suite');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -191,6 +193,13 @@ function applyNavigationV411Patch() {
   fs.writeFileSync(navigationV411PatchMarker, 'v41.1 mobile navigation and separate authentication applied\n');
 }
 
+function applySmartImportV42Patch() {
+  if (fs.existsSync(smartImportV42PatchMarker)) return;
+  if (!fs.existsSync(smartImportV42PatchFile)) throw new Error('Required v42 Smart Product Import patch is missing.');
+  new AdmZip(smartImportV42PatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(smartImportV42PatchMarker, 'v42 smart product import suite applied\n');
+}
+
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
   new AdmZip(path.join(__dirname, 'market-hub-v1.zip')).extractAllTo(appDirectory, true);
   new AdmZip(path.join(__dirname, 'market-hub-v2-patch.zip')).extractAllTo(appDirectory, true);
@@ -237,4 +246,5 @@ applyStorefrontV40Patch();
 applyCustomerAccountV41Patch();
 applyOrderAccountV42Patch();
 applyNavigationV411Patch();
+applySmartImportV42Patch();
 require(path.join(appDirectory, 'server.js'));
