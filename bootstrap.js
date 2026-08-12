@@ -48,8 +48,8 @@ const smartImportV42PatchFile = path.join(__dirname, 'market-hub-v42-smart-produ
 const smartImportV42PatchMarker = path.join(appDirectory, '.market-hub-v42-smart-product-import-suite');
 const amazonImportV421PatchFile = path.join(__dirname, 'market-hub-v42-1-amazon-link-import.zip');
 const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-draft-publish-workflow-1');
-const northflankReadinessPatchFile = path.join(__dirname, 'market-hub-v42-2-northflank-readiness.zip');
-const northflankReadinessPatchMarker = path.join(appDirectory, '.market-hub-v42-2-northflank-readiness');
+const deploymentReadinessPatchFile = path.join(__dirname, 'market-hub-v42-2-deployment-readiness.zip');
+const deploymentReadinessPatchMarker = path.join(appDirectory, '.market-hub-v42-2-deployment-readiness');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
@@ -211,11 +211,11 @@ function applyAmazonImportV421Patch() {
   fs.writeFileSync(amazonImportV421PatchMarker, 'v42.1 Draft publish workflow applied\n');
 }
 
-function applyNorthflankReadinessPatch() {
-  if (fs.existsSync(northflankReadinessPatchMarker)) return;
-  if (!fs.existsSync(northflankReadinessPatchFile)) throw new Error('Required v42.2 Northflank readiness patch is missing.');
-  new AdmZip(northflankReadinessPatchFile).extractAllTo(appDirectory, true);
-  fs.writeFileSync(northflankReadinessPatchMarker, 'v42.2 Northflank readiness applied\n');
+function applyDeploymentReadinessPatch() {
+  if (fs.existsSync(deploymentReadinessPatchMarker)) return;
+  if (!fs.existsSync(deploymentReadinessPatchFile)) throw new Error('Required v42.2 deployment readiness patch is missing.');
+  new AdmZip(deploymentReadinessPatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(deploymentReadinessPatchMarker, 'v42.2 deployment readiness applied\n');
 }
 
 if (!fs.existsSync(path.join(appDirectory, 'server.js'))) {
@@ -266,5 +266,5 @@ applyOrderAccountV42Patch();
 applyNavigationV411Patch();
 applySmartImportV42Patch();
 applyAmazonImportV421Patch();
-applyNorthflankReadinessPatch();
+applyDeploymentReadinessPatch();
 require(path.join(appDirectory, 'server.js'));
