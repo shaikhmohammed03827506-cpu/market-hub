@@ -35,6 +35,7 @@ const config = {
   delhiveryCodEnabled: process.env.DELHIVERY_COD_ENABLED === 'true',
   adminEmail: (process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || '',
+  sessionSecret: process.env.SESSION_SECRET || '',
   logo: process.env.STORE_LOGO_URL || ''
 };
 
@@ -65,26 +66,37 @@ function invoicePdf(order) {
   pdf+=`trailer\n<< /Size ${objects.length} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF`;
   return Buffer.from(pdf);
 }
-const adminSessions = new Map();
-const customerSessions = new Map();
 const productImportRate = new Map();
 function allowProductImportRequest(request,limit=12,windowMs=60_000){const key=String(request.headers['x-forwarded-for']||request.socket.remoteAddress||'unknown').split(',')[0].trim(),now=Date.now(),entry=productImportRate.get(key);if(!entry||entry.resetAt<now){productImportRate.set(key,{count:1,resetAt:now+windowMs});return true}if(entry.count>=limit)return false;entry.count++;return true}
 const parseCookies = request => Object.fromEntries((request.headers.cookie||'').split(';').map(item=>item.trim()).filter(Boolean).map(item=>{const point=item.indexOf('=');return point<0?[item,'']:[item.slice(0,point),decodeURIComponent(item.slice(point+1))]}));
-const validAdminSession = request => { const token=parseCookies(request).mh_admin_session; const session=token&&adminSessions.get(token); if(!session||session.expiresAt<Date.now()){if(token)adminSessions.delete(token);return false}return true; };
-const makeAdminSession = () => { const token=crypto.randomBytes(32).toString('base64url'); adminSessions.set(token,{expiresAt:Date.now()+8*60*60*1000}); return token; };
+const sessionKey = () => {
+  if (!config.sessionSecret || config.sessionSecret.length < 32) throw new Error('SESSION_SECRET must contain at least 32 characters.');
+  return config.sessionSecret;
+};
+const makeSignedSession = payload => {
+  const body=Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature=crypto.createHmac('sha256',sessionKey()).update(body).digest('base64url');
+  return `${body}.${signature}`;
+};
+const readSignedSession = token => {
+  try {
+    const [body,signature,...rest]=String(token||'').split('.');
+    if(!body||!signature||rest.length)return null;
+    const expected=crypto.createHmac('sha256',sessionKey()).update(body).digest('base64url');
+    if(!secureEqual(expected,signature))return null;
+    const payload=JSON.parse(Buffer.from(body,'base64url').toString('utf8'));
+    return Number(payload.expiresAt)>Date.now()?payload:null;
+  } catch { return null; }
+};
+const validAdminSession = request => readSignedSession(parseCookies(request).mh_admin_session)?.role==='admin';
+const makeAdminSession = () => makeSignedSession({role:'admin',expiresAt:Date.now()+8*60*60*1000});
 const adminCookie = (request,token) => `mh_admin_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${request.headers['x-forwarded-proto']==='https'||request.socket.encrypted?'; Secure':''}`;
 const customerCookie = (request,token) => `mh_customer_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000${request.headers['x-forwarded-proto']==='https'||request.socket.encrypted?'; Secure':''}`;
 const validCustomerSession = request => {
-  const token = parseCookies(request).mh_customer_session;
-  const session = token && customerSessions.get(token);
-  if (!session || session.expiresAt < Date.now()) { if (token) customerSessions.delete(token); return null; }
-  return session.userId;
+  const session=readSignedSession(parseCookies(request).mh_customer_session);
+  return session?.role==='customer'&&/^[0-9a-f-]{36}$/i.test(String(session.userId||''))?session.userId:null;
 };
-const makeCustomerSession = userId => {
-  const token = crypto.randomBytes(32).toString('base64url');
-  customerSessions.set(token, { userId, expiresAt: Date.now() + 30 * 24 * 60 * 60 * 1000 });
-  return token;
-};
+const makeCustomerSession = userId => makeSignedSession({role:'customer',userId,expiresAt:Date.now()+30*24*60*60*1000});
 
 async function razorpay(endpoint, body) {
   const authorization = Buffer.from(`${config.razorpayKeyId}:${config.razorpayKeySecret}`).toString('base64');
@@ -389,7 +401,7 @@ async function handleApi(req, res, url) {
     res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Set-Cookie':adminCookie(req,makeAdminSession()),'Cache-Control':'no-store'});return res.end(JSON.stringify({authenticated:true}));
   }
   if (req.method==='GET' && url.pathname==='/api/auth/admin/session') return sendJson(res,200,{authenticated:validAdminSession(req)});
-  if (req.method==='POST' && url.pathname==='/api/auth/admin/logout') { const token=parseCookies(req).mh_admin_session;if(token)adminSessions.delete(token);res.writeHead(204,{'Set-Cookie':'mh_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});return res.end(); }
+  if (req.method==='POST' && url.pathname==='/api/auth/admin/logout') { res.writeHead(204,{'Set-Cookie':'mh_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});return res.end(); }
   if (req.method === 'POST' && url.pathname === '/api/auth/customer/register') {
     try {
       const { registerCustomer } = require('./db');
@@ -413,7 +425,6 @@ async function handleApi(req, res, url) {
     catch(error){return sendJson(res,404,{error:error.message||'No order matched those details.'});}
   }
   if (req.method === 'POST' && url.pathname === '/api/auth/customer/logout') {
-    const token = parseCookies(req).mh_customer_session; if (token) customerSessions.delete(token);
     res.writeHead(204, {'Set-Cookie':'mh_customer_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'}); return res.end();
   }
   if (req.method === 'GET' && url.pathname === '/api/customer/account') {
@@ -819,7 +830,7 @@ function premiumHtml(data) {
   return premium.replace('</head>','<link rel="stylesheet" href="/mobile-navigation-v41-1.css?v=41.1"></head>').replace('</body>','<script src="/mobile-navigation-v41-1.js?v=41.1" defer></script></body>');
 }
 
-http.createServer(async (req,res) => {
+async function requestHandler(req,res) {
   try {
     const url=new URL(req.url,`http://${req.headers.host||'localhost'}`);
     if (url.pathname.startsWith('/api/')) { const handled=await handleApi(req,res,url); if (handled!==false) return; return sendJson(res,404,{error:'API route not found.'}); }
@@ -833,4 +844,10 @@ http.createServer(async (req,res) => {
     const file=path.join(root,pathname);
     fs.readFile(file,(error,data)=>{ if(error){res.writeHead(404);return res.end('Not found');}const isCustomerHtml=path.extname(file)==='.html'&&!['/admin.html','/admin-login.html'].includes(pathname);const html=isCustomerHtml?premiumHtml(data):data;res.writeHead(200,{'Content-Type':contentTypes[path.extname(file)]||'application/octet-stream','Cache-Control':path.extname(file)==='.html'?'no-cache':'public, max-age=86400'});res.end(html); });
   } catch (error) { console.error(error); sendJson(res,500,{error:'Unexpected server error.'}); }
-}).listen(config.port,()=>console.log(`MARKET HUB server: http://localhost:${config.port}`));
+}
+
+if (require.main === module) {
+  http.createServer(requestHandler).listen(config.port,()=>console.log(`MARKET HUB server: http://localhost:${config.port}`));
+}
+
+module.exports = requestHandler;
