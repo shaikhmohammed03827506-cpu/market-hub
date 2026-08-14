@@ -20,8 +20,11 @@ Verified on 2026-08-14 against `https://market-hub-staging.vercel.app`.
 - A disposable product rendered in the shop, was added to the cart, increased to quantity two, retained after the disabled checkout attempt, and was then removed.
 - A live Amazon.in product was analyzed into a review item with title and images; the item was not published and was deleted after the test.
 - Shiprocket catalogue product and collection feeds returned data.
+- The latest v43 product-variant release from `main` was merged without dropping the Vercel health checks or stateless signed sessions.
+- The v43 Neon migration completed, and a disposable two-variant product rendered both options, switched SKU/price/stock correctly, added the selected Blue variant to the cart, and appeared with both variants in the Shiprocket catalogue feed.
 - Razorpay and Shiprocket checkout endpoints failed safely while their credentials were absent; an invalid webhook body was rejected.
 - All disposable customer, product, importer, and cart test data was cleaned up.
+- GitHub reports all checks passed and no conflicts with the base branch; the pull request remains a draft by design.
 
 ## Database role note
 
