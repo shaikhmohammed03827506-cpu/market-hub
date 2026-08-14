@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="admin.css">
   <link rel="stylesheet" href="admin-import.css?v=42-1-draft-publish-1">
   <link rel="stylesheet" href="admin-import-publish.css?v=42-1-draft-publish-1">
+  <link rel="stylesheet" href="variant-editor-v43.css?v=43-product-variants-1">
 </head>
 <body>
   <header class="import-top"><a href="admin.html"><img src="assets/market-hub-logo.png" alt="MARKET HUB"><b>ADMIN</b></a><div><a href="admin.html">← Admin dashboard</a><a href="index.html">View store</a></div></header>
@@ -61,7 +62,7 @@
           <label>Weight grams<input name="weightGrams" type="number" min="1" placeholder="Not Available"></label>
         </div>
         <label>Source URL<input name="sourceUrl" readonly></label>
-        <label>Variants JSON<textarea name="variants" rows="4" placeholder="Not Available"></textarea></label>
+        <div id="importVariantEditor"></div>
         <label>Specifications / Attributes JSON<textarea name="specifications" rows="5" placeholder="Not Available"></textarea></label>
         <label>Tags<input name="tags" placeholder="Not Available"></label>
         <fieldset id="duplicateOptions" hidden><legend>Duplicate action</legend><label><input type="radio" name="duplicateAction" value="update"> Update Existing</label><label><input type="radio" name="duplicateAction" value="separate"> Create New</label><label><input type="radio" name="duplicateAction" value="skip"> Skip</label></fieldset>
@@ -71,6 +72,6 @@
       </div>
     </form>
   </div>
-  <datalist id="categoryOptions"></datalist><div id="importToast" aria-live="polite"></div><script src="admin-import.js?v=42-1-draft-publish-1"></script>
+  <datalist id="categoryOptions"></datalist><div id="importToast" aria-live="polite"></div><script src="variant-editor-v43.js?v=43-product-variants-1"></script><script src="admin-import.js?v=43-product-variants-1"></script>
 </body>
 </html>

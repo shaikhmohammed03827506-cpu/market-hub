@@ -51,7 +51,7 @@ const pdfEscape = value => String(value ?? '').replace(/[^\x20-\x7e]/g, ' ').rep
 function invoicePdf(order) {
   const lines=[`MARKET HUB - TAX INVOICE`,`Invoice: ${order.invoiceNumber}`,`Order: MH${order.orderNumber}`,
     `Date: ${new Date(order.createdAt).toLocaleDateString('en-IN')}`,`Payment: ${order.paymentMethod} / ${order.paymentStatus}`,'',
-    ...order.items.map(item=>`${item.name} (${item.sku}) x ${item.quantity}  INR ${(Number(item.price)*Number(item.quantity)).toFixed(2)}`),'',
+    ...order.items.map(item=>{const options=Object.entries(item.options||{}).map(([name,value])=>`${name}: ${value}`).join(', ');return`${item.name}${options?` - ${options}`:''} (${item.sku}) x ${item.quantity}  INR ${(Number(item.price)*Number(item.quantity)).toFixed(2)}`}),'',
     `Subtotal: INR ${order.subtotalInr.toFixed(2)}`,`Discount: INR ${order.discountInr.toFixed(2)}`,
     `Shipping: INR ${order.shippingInr.toFixed(2)}`,`GST: INR ${order.gstInr.toFixed(2)}`,`Total: INR ${order.totalInr.toFixed(2)}`,
     '','Thank you for shopping with MARKET HUB.'];
@@ -252,20 +252,30 @@ function publicOrigin(request) {
 }
 
 function shiprocketProductPayload(product, origin) {
-  const image = product.image_url ? `${origin}${product.image_url.startsWith('/') ? product.image_url : `/${product.image_url}`}` : '';
+  const absoluteImage=value=>!value?'':/^https?:\/\//i.test(value)?value:`${origin}${value.startsWith('/')?value:`/${value}`}`;
+  const image = absoluteImage(product.image_url);
   const now = new Date().toISOString();
+  const enabledVariants=Array.isArray(product.variants)?product.variants.filter(variant=>variant.is_enabled!==false):[];
+  const variants=enabledVariants.length?enabledVariants.map(variant=>({
+    id:Number(variant.checkout_variant_id),title:Object.values(variant.options||{}).join(' / ')||variant.sku,
+    price:Number(variant.price_inr).toFixed(2),compare_at_price:variant.compare_at_price_inr==null?undefined:Number(variant.compare_at_price_inr).toFixed(2),
+    sku:String(variant.sku),created_at:now,updated_at:now,taxable:true,quantity:Number(variant.stock_quantity||0),
+    grams:Number(variant.weight_grams||500),image:{src:absoluteImage(variant.image_url||product.image_url)},
+    weight:Number(variant.weight_grams||500)/1000,weight_unit:'kg',options:variant.options||{}
+  })): [{id:Number(product.checkout_product_id||product.id),title:'Default',price:Number(product.price_inr).toFixed(2),sku:String(product.sku),created_at:now,updated_at:now,taxable:true,quantity:Number(product.stock_quantity||0),grams:Number(product.weight_grams||500),image:{src:image},weight:Number(product.weight_grams||500)/1000,weight_unit:'kg'}];
   return {
-    id: Number(product.id), title: String(product.name),
+    id: Number(product.checkout_product_id||product.id), title: String(product.name),
     body_html: `<p>${String(product.name).replace(/[<>&]/g, '')}</p>`, vendor: 'MARKET HUB',
     product_type: String(product.category || 'General'), handle: String(product.sku).toLowerCase().replace(/[^a-z0-9]+/g, '-'),
     created_at: now, updated_at: now, tags: String(product.category || ''), status: 'active',
-    variants: [{ id: Number(product.id), title: 'Default', price: Number(product.price_inr).toFixed(2), sku: String(product.sku), created_at: now, updated_at: now, taxable: true, quantity: Number(product.stock_quantity || 0), grams: Number(product.weight_grams || 500), image: { src: image }, weight: Number(product.weight_grams || 500) / 1000, weight_unit: 'kg' }],
+    variants,
     image: { src: image }
   };
 }
 
-function shiprocketCategoryFeed() {
-  const categories = [...new Set([...catalogueProducts().values()].map(product => String(product.category || 'General')))].sort();
+async function shiprocketCategoryFeed() {
+  const {listActiveProducts}=require('./db'),products=await listActiveProducts();
+  const categories = [...new Set(products.map(product => String(product.category || 'General')))].sort();
   return categories.map((title, index) => ({
     id: index + 1,
     title,
@@ -276,9 +286,10 @@ function shiprocketCategoryFeed() {
   }));
 }
 
-function shiprocketProductFeed(origin, categoryName = '') {
-  const categoryIds = new Map(shiprocketCategoryFeed().map(category => [category.title, category.id]));
-  return [...catalogueProducts().values()]
+async function shiprocketProductFeed(origin, categoryName = '') {
+  const {listActiveProducts}=require('./db'),products=await listActiveProducts(),categories=await shiprocketCategoryFeed();
+  const categoryIds = new Map(categories.map(category => [category.title, category.id]));
+  return products
     .filter(product => !categoryName || String(product.category || 'General') === categoryName)
     .map(product => ({ ...shiprocketProductPayload(product, origin), collection_id: categoryIds.get(String(product.category || 'General')) || 1 }));
 }
@@ -290,30 +301,25 @@ function shiprocketPage(url) {
 }
 
 async function prepareShiprocketCart(request, cart) {
-  if (!Array.isArray(cart) || !cart.length || cart.length > 50) throw new Error('Your cart is invalid.');
-  const catalogue = catalogueProducts();
+  const db=require('./db'),lines=await db.checkoutCartItems(cart);
   const seen = new Set();
   const items = [];
-  for (const item of cart) {
-    const quantity = Number(item.qty);
-    const sku = String(item.sku || '').trim();
-    const product = catalogue.get(sku);
-    if (!product || !Number.isInteger(quantity) || quantity < 1 || quantity > 99) throw new Error('Please refresh your cart and try again.');
-    if (quantity > Number(product.stock_quantity)) throw new Error(`${product.name} does not have enough stock.`);
-    if (!seen.has(sku)) {
+  for (const line of lines) {
+    if (!seen.has(line.productId)) {
       // Fastrr Checkout validates variants against its catalogue before it
       // creates a checkout token, so send the product to its catalogue first.
+      const product=await db.productById(line.productId);if(!product)throw new Error('A checkout product is no longer available.');
       await shiprocketCheckout('/wh/v1/custom/product', shiprocketProductPayload(product, publicOrigin(request)));
-      seen.add(sku);
+      seen.add(line.productId);
     }
-    items.push({ variant_id: String(product.id), quantity });
+    items.push({variant_id:String(line.checkoutVariantId),quantity:line.quantity});
   }
   return items;
 }
 
 const cleanShippingText = value => String(value || '').trim().replace(/[<>]/g, '').slice(0, 200);
 const shippingPhone = value => String(value || '').replace(/\D/g, '').slice(-10);
-function shiprocketShippingPayload(checkoutOrder, savedOrder) {
+async function shiprocketShippingPayload(checkoutOrder, savedOrder) {
   const address = checkoutOrder.shipping_address || {};
   const firstName = cleanShippingText(address.first_name || checkoutOrder.customer_name || 'MARKET HUB customer') || 'MARKET HUB customer';
   const lastName = cleanShippingText(address.last_name);
@@ -323,17 +329,15 @@ function shiprocketShippingPayload(checkoutOrder, savedOrder) {
   const city = cleanShippingText(address.city);
   const state = cleanShippingText(address.state);
   if (!phone || !pincode || !line1 || !city || !state) throw new Error('The checkout order needs a complete delivery address before it can be sent to Shiprocket.');
-  const supplierProducts = catalogueProducts();
+  const {shiprocketOrderItems}=require('./db'),savedItems=await shiprocketOrderItems(savedOrder.id);
   let weightGrams = 0;
   const orderItems = [];
-  for (const cartItem of checkoutOrder.cart_data?.items || []) {
-    const product = Array.from(supplierProducts.values()).find(item => String(item.id) === String(cartItem.variant_id));
-    if (!product) continue;
-    const units = Math.max(1, Number(cartItem.quantity || 1));
-    weightGrams += Math.max(100, Number(product.weight_grams || 500)) * units;
+  for (const item of savedItems) {
+    const units=Math.max(1,item.quantity),optionLabel=Object.entries(item.options||{}).map(([name,value])=>`${name}: ${value}`).join(', ');
+    weightGrams += Math.max(100,Number(item.weightGrams||500)) * units;
     orderItems.push({
-      sku: String(product.sku), name: cleanShippingText(product.name), units,
-      selling_price: Number(product.price_inr || 0).toFixed(2), discount: 0
+      sku:String(item.sku),name:cleanShippingText(optionLabel?`${item.name} (${optionLabel})`:item.name),units,
+      selling_price:Number(item.price||0).toFixed(2),discount:0
     });
   }
   if (!orderItems.length) throw new Error('The checkout order has no valid products to send to Shiprocket.');
@@ -361,23 +365,10 @@ function shouldCreateShippingOrder(order) {
   return !['FAILED', 'CANCELLED', 'CANCELLED_BY_USER'].includes(String(order?.status || '').toUpperCase());
 }
 
-function calculateCartTotal(cart) {
+async function calculateCartTotal(cart) {
   let totalPaise = 0;
-  const catalogue = cataloguePrices();
-  for (const item of cart) {
-    const qty = Number(item.qty);
-    if (!Number.isInteger(qty) || qty < 1 || qty > 99) throw new Error('A cart quantity is invalid.');
-    const sku = String(item.sku || '').trim();
-    const catalogueItem = sku && catalogue.get(sku);
-    if (catalogueItem) {
-      if (qty > catalogueItem.stock) throw new Error('One of these products no longer has enough stock.');
-      totalPaise += Math.round(catalogueItem.price * 100) * qty;
-      continue;
-    }
-    const legacyId = Number(item.id);
-    if (!Number.isInteger(legacyId) || !priceCatalog.has(legacyId)) throw new Error('A cart item is no longer available.');
-    totalPaise += priceCatalog.get(legacyId) * 100 * qty;
-  }
+  const {checkoutCartItems}=require('./db'),lines=await checkoutCartItems(cart);
+  for(const line of lines)totalPaise+=Math.round(line.price*100)*line.quantity;
   return totalPaise;
 }
 
@@ -477,7 +468,7 @@ async function handleApi(req, res, url) {
   if (req.method === 'POST' && url.pathname === '/api/loyalty/quote') {
     const userId = validCustomerSession(req); if (!userId) return sendJson(res,401,{authenticated:false,error:'Sign in to use MARKET HUB Coins.'});
     try {
-      const body=JSON.parse(await readBody(req)); const totalPaise=calculateCartTotal(body.cart || []);
+      const body=JSON.parse(await readBody(req)); const totalPaise=await calculateCartTotal(body.cart || []);
       const { loyaltyQuote } = require('./db'); return sendJson(res,200,await loyaltyQuote(userId,totalPaise/100,body.coins));
     } catch(error) { return sendJson(res,400,{error:error.message || 'Coin value could not be checked.'}); }
   }
@@ -683,7 +674,7 @@ async function handleApi(req, res, url) {
       const sort = String(url.searchParams.get('sort') || 'latest');
       const { listActiveProducts } = require('./db');
       let products = await listActiveProducts();
-      if (query) products = products.filter(item => `${item.name} ${item.category} ${item.sku}`.toLowerCase().includes(query));
+      if (query) products = products.filter(item => `${item.name} ${item.category} ${item.sku} ${(item.variants||[]).map(variant=>`${variant.sku} ${Object.values(variant.options||{}).join(' ')}`).join(' ')}`.toLowerCase().includes(query));
       if (category) products = products.filter(item => String(item.category || '').toLowerCase() === category);
       if (sort === 'price-low') products.sort((a,b) => Number(a.price_inr) - Number(b.price_inr));
       if (sort === 'price-high') products.sort((a,b) => Number(b.price_inr) - Number(a.price_inr));
@@ -694,6 +685,12 @@ async function handleApi(req, res, url) {
     }
     catch (error) { console.error('Product query failed:', error.message); return sendJson(res,503,{error:'Product catalogue database is not ready.'}); }
   }
+  if(req.method==='GET'&&url.pathname==='/api/categories'){
+    try{const {listActiveProducts}=require('./db'),products=await listActiveProducts(),categories=[...new Set(products.map(product=>String(product.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));return sendJson(res,200,{categories});}
+    catch(error){console.error('Category query failed:',error.message);return sendJson(res,503,{error:'Product categories are not ready.'});}
+  }
+  const publicProductRoute=url.pathname.match(/^\/api\/products\/([^/]+)$/);
+  if(req.method==='GET'&&publicProductRoute){try{const {productBySku}=require('./db'),product=await productBySku(decodeURIComponent(publicProductRoute[1]));return product?sendJson(res,200,{product}):sendJson(res,404,{error:'Product not found.'});}catch(error){console.error('Product detail query failed:',error.message);return sendJson(res,503,{error:'Product details are not ready.'});}}
   if (req.method==='GET' && url.pathname==='/api/reviews') {
     try { const { publicReviewsBySku } = require('./db'); const reviews=await publicReviewsBySku(url.searchParams.get('sku'),url.searchParams.get('sort'));const averageRating=reviews.length?Number((reviews.reduce((sum,item)=>sum+item.rating,0)/reviews.length).toFixed(1)):0; return sendJson(res,200,{reviews,averageRating,reviewCount:reviews.length}); }
     catch (error) { console.error('Public review query failed:', error.message); return sendJson(res,503,{error:'Reviews are not available yet.'}); }
@@ -724,14 +721,14 @@ async function handleApi(req, res, url) {
   if (req.method==='GET' && url.pathname==='/api/shiprocket/catalog/products') {
     const { page, limit, from } = shiprocketPage(url);
     const categoryId = Number.parseInt(url.searchParams.get('collection_id') || '', 10);
-    const categories = shiprocketCategoryFeed();
+    const categories = await shiprocketCategoryFeed();
     const selectedCategory = Number.isInteger(categoryId) ? categories.find(category => category.id === categoryId)?.title : '';
-    const products = shiprocketProductFeed(publicOrigin(req), selectedCategory || '');
+    const products = await shiprocketProductFeed(publicOrigin(req), selectedCategory || '');
     return sendJson(res,200,{data:{total:products.length,products:products.slice(from,from + limit),page,limit}});
   }
   if (req.method==='GET' && url.pathname==='/api/shiprocket/catalog/collections') {
     const { page, limit, from } = shiprocketPage(url);
-    const collections = shiprocketCategoryFeed();
+    const collections = await shiprocketCategoryFeed();
     return sendJson(res,200,{data:{total:collections.length,collections:collections.slice(from,from + limit),page,limit}});
   }
   if (req.method==='GET' && url.pathname==='/api/config/payment') return sendJson(res, 200, {ready:Boolean(config.razorpayKeyId && config.razorpayKeySecret),keyId:config.razorpayKeyId,logo:config.logo});
@@ -768,7 +765,7 @@ async function handleApi(req, res, url) {
         const reservation = await reserveShiprocketShipment(saved.id, config.shiprocketPickupLocation);
         if (reservation.reserved) {
           try {
-            const shippingOrder = await shiprocketShipping('/v1/external/orders/create', shiprocketShippingPayload(order, saved));
+            const shippingOrder = await shiprocketShipping('/v1/external/orders/create', await shiprocketShippingPayload(order, saved));
             await completeShiprocketShipment(saved.id, shippingOrder);
             shipmentCreated = true;
           } catch (shippingError) {
@@ -797,7 +794,7 @@ async function handleApi(req, res, url) {
     const {cart=[]} = JSON.parse(await readBody(req));
     if (!Array.isArray(cart) || !cart.length || cart.length>50) return sendJson(res, 400, {error:'Your cart is invalid.'});
     let totalPaise;
-    try { totalPaise = calculateCartTotal(cart); }
+    try { totalPaise = await calculateCartTotal(cart); }
     catch (error) { return sendJson(res,400,{error:error.message||'A cart item is no longer available.'}); }
     const receipt=`mh_${Date.now()}_${crypto.randomBytes(3).toString('hex')}`;
     const order=await razorpay('/orders',{amount:totalPaise,currency:'INR',receipt,notes:{store:'MARKET HUB'}});

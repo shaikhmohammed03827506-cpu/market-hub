@@ -9,6 +9,7 @@ let customerExperienceSchemaReady;
 let engagementSchemaReady;
 let accountV41SchemaReady;
 let productImportSchemaReady;
+let variantSchemaReady;
 
 function database() {
   if (!process.env.DATABASE_URL) throw new Error('Database is not configured. Add DATABASE_URL to the private .env file.');
@@ -32,9 +33,25 @@ async function databaseHealth() {
 const productFields = `
   select p.id, p.sku, p.name, p.slug, p.description, p.specifications, p.price_inr,
          p.compare_at_price_inr, p.stock_quantity, p.weight_kg, p.is_active,
+         p.checkout_product_id, p.status, p.published_at,
          coalesce(c.name, 'Uncategorized') as category,
          coalesce(jsonb_agg(jsonb_build_object('url', pi.url, 'alt_text', pi.alt_text, 'sort_order', pi.sort_order)
-           order by pi.sort_order) filter (where pi.id is not null), '[]'::jsonb) as images
+           order by pi.sort_order) filter (where pi.id is not null), '[]'::jsonb) as images,
+         coalesce((select jsonb_agg(jsonb_build_object(
+           'id',po.id,'name',po.name,'position',po.position,
+           'values',coalesce((select jsonb_agg(jsonb_build_object('id',pov.id,'value',pov.value,'position',pov.position) order by pov.position,pov.created_at)
+             from product_option_values pov where pov.option_id=po.id),'[]'::jsonb)
+         ) order by po.position,po.created_at) from product_options po where po.product_id=p.id),'[]'::jsonb) as options,
+         coalesce((select jsonb_agg(jsonb_build_object(
+           'id',pv.id,'sku',pv.sku,'price_inr',pv.price_inr,'compare_at_price_inr',pv.compare_at_price_inr,
+           'stock_quantity',pv.stock_quantity,'weight_kg',pv.weight_kg,'barcode',pv.barcode,
+           'is_enabled',pv.is_enabled,'is_default',pv.is_default,'checkout_variant_id',pv.checkout_variant_id,
+           'options',coalesce((select jsonb_object_agg(po.name,pov.value order by po.position)
+             from product_variant_values pvv join product_option_values pov on pov.id=pvv.option_value_id
+             join product_options po on po.id=pov.option_id where pvv.variant_id=pv.id),'{}'::jsonb),
+           'images',coalesce((select jsonb_agg(jsonb_build_object('url',pvi.url,'alt_text',pvi.alt_text,'sort_order',pvi.sort_order) order by pvi.sort_order,pvi.created_at)
+             from product_variant_images pvi where pvi.variant_id=pv.id),'[]'::jsonb)
+         ) order by pv.position,pv.created_at) from product_variants pv where pv.product_id=p.id and pv.archived_at is null),'[]'::jsonb) as variants
   from products p
   left join categories c on c.id = p.category_id
   left join product_images pi on pi.product_id = p.id
@@ -43,22 +60,42 @@ const productFields = `
 const productGroup = ' group by p.id, c.name';
 const serializeProduct = row => {
   const images = Array.isArray(row.images) ? row.images.map(image => image.url).filter(Boolean) : [];
+  const options = Array.isArray(row.options) ? row.options.map(option => ({
+    id: option.id, name: String(option.name || ''), position: Number(option.position || 0),
+    values: Array.isArray(option.values) ? option.values.map(value => ({ id:value.id, value:String(value.value || ''), position:Number(value.position || 0) })) : []
+  })) : [];
+  const variants = Array.isArray(row.variants) ? row.variants.map(variant => {
+    const variantImages=Array.isArray(variant.images)?variant.images.map(image=>image.url).filter(Boolean):[];
+    const price=Number(variant.price_inr),mrp=variant.compare_at_price_inr==null?null:Number(variant.compare_at_price_inr);
+    return { id:variant.id,sku:String(variant.sku||''),price_inr:price,compare_at_price_inr:mrp,
+      discount:mrp&&mrp>price?Math.round((mrp-price)*100/mrp):0,stock_quantity:Number(variant.stock_quantity||0),
+      weight_grams:Math.round(Number(variant.weight_kg||0)*1000),barcode:String(variant.barcode||''),
+      is_enabled:variant.is_enabled!==false,is_default:Boolean(variant.is_default),checkout_variant_id:Number(variant.checkout_variant_id),
+      options:variant.options&&typeof variant.options==='object'?variant.options:{},image_url:variantImages[0]||images[0]||'',gallery:variantImages };
+  }) : [];
+  const display=variants.find(variant=>variant.is_default&&variant.is_enabled)||variants.find(variant=>variant.is_enabled)||null;
+  const price=display?display.price_inr:Number(row.price_inr),compareAt=display?display.compare_at_price_inr:(row.compare_at_price_inr==null?null:Number(row.compare_at_price_inr));
+  const stock=variants.length?variants.filter(variant=>variant.is_enabled).reduce((total,variant)=>total+variant.stock_quantity,0):Number(row.stock_quantity);
   return {
     id: row.id, sku: row.sku, name: row.name, slug: row.slug, category: row.category,
-    description: row.description || '', price_inr: Number(row.price_inr),
-    compare_at_price_inr: row.compare_at_price_inr == null ? null : Number(row.compare_at_price_inr),
-    stock_quantity: Number(row.stock_quantity), weight_grams: Math.round(Number(row.weight_kg) * 1000),
-    is_active: row.is_active, image_url: images[0] || '', gallery: images,
-    video_url: row.specifications?.video_url || ''
+    description: row.description || '', specifications:row.specifications&&typeof row.specifications==='object'?row.specifications:{},
+    brand:String(row.specifications?.brand||''),price_inr: price, compare_at_price_inr:compareAt,
+    stock_quantity: stock, weight_grams: display?display.weight_grams:Math.round(Number(row.weight_kg) * 1000),
+    is_active: row.is_active, status:row.status||'published',published_at:row.published_at||null,
+    checkout_product_id:Number(row.checkout_product_id),image_url: display?.image_url || images[0] || '', gallery: images,
+    video_url: row.specifications?.video_url || '',has_variants:variants.length>0,options,variants,
+    low_stock_variants:variants.filter(variant=>variant.is_enabled&&variant.stock_quantity<=5).map(variant=>({id:variant.id,sku:variant.sku,stock_quantity:variant.stock_quantity,options:variant.options}))
   };
 };
 
 async function listActiveProducts() {
-  const result = await database().query(`${productFields} where p.is_active = true${productGroup} order by p.created_at desc limit 5000`);
+  await ensureVariantSchema();
+  const result = await database().query(`${productFields} where p.is_active = true and p.status='published'${productGroup} order by p.created_at desc limit 5000`);
   return result.rows.map(serializeProduct);
 }
 
 async function listAdminProducts() {
+  await ensureVariantSchema();
   const result = await database().query(`${productFields}${productGroup} order by p.updated_at desc limit 5000`);
   return result.rows.map(serializeProduct);
 }
@@ -66,6 +103,131 @@ async function listAdminProducts() {
 const toSlug = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 const isWebUrl = value => /^https?:\/\/\S+$/i.test(String(value || '').trim());
+
+async function ensureVariantSchema() {
+  if (variantSchemaReady) return variantSchemaReady;
+  variantSchemaReady = (async () => {
+    const client = await database().connect();
+    try {
+      await client.query('begin');
+      await client.query('create sequence if not exists market_hub_checkout_id_seq as bigint start with 1000000000');
+      await client.query("alter table products add column if not exists status text not null default 'published'");
+      await client.query('alter table products add column if not exists published_at timestamptz');
+      await client.query("alter table products add column if not exists checkout_product_id bigint default nextval('market_hub_checkout_id_seq')");
+      await client.query("update products set checkout_product_id=nextval('market_hub_checkout_id_seq') where checkout_product_id is null");
+      await client.query('alter table products alter column checkout_product_id set not null');
+      await client.query('create unique index if not exists products_checkout_product_id_unique on products(checkout_product_id)');
+      await client.query(`create table if not exists product_options (
+        id uuid primary key default gen_random_uuid(),product_id uuid not null references products(id) on delete cascade,
+        name text not null,position integer not null default 0,created_at timestamptz not null default now(),updated_at timestamptz not null default now()
+      )`);
+      await client.query('create unique index if not exists product_options_product_name_unique on product_options(product_id,lower(name))');
+      await client.query(`create table if not exists product_option_values (
+        id uuid primary key default gen_random_uuid(),option_id uuid not null references product_options(id) on delete cascade,
+        value text not null,position integer not null default 0,created_at timestamptz not null default now()
+      )`);
+      await client.query('create unique index if not exists product_option_values_option_value_unique on product_option_values(option_id,lower(value))');
+      await client.query("create index if not exists product_option_values_search_idx on product_option_values using gin(to_tsvector('simple',value))");
+      await client.query(`create table if not exists product_variants (
+        id uuid primary key default gen_random_uuid(),product_id uuid not null references products(id) on delete cascade,
+        sku text not null unique,price_inr numeric(10,2) not null check(price_inr>0),
+        compare_at_price_inr numeric(10,2),stock_quantity integer not null default 0 check(stock_quantity>=0),
+        weight_kg numeric(8,3) not null default .5 check(weight_kg>0),barcode text,
+        is_enabled boolean not null default true,is_default boolean not null default false,position integer not null default 0,
+        checkout_variant_id bigint not null default nextval('market_hub_checkout_id_seq'),
+        archived_at timestamptz,created_at timestamptz not null default now(),updated_at timestamptz not null default now(),
+        check(compare_at_price_inr is null or compare_at_price_inr>=price_inr)
+      )`);
+      await client.query('alter table product_variants add column if not exists archived_at timestamptz');
+      await client.query('create unique index if not exists product_variants_checkout_id_unique on product_variants(checkout_variant_id)');
+      await client.query('create unique index if not exists product_variants_one_default on product_variants(product_id) where is_default');
+      await client.query("create index if not exists product_variants_search_idx on product_variants using gin(to_tsvector('simple',coalesce(sku,'')||' '||coalesce(barcode,'')))");
+      await client.query('create index if not exists product_variants_product_enabled on product_variants(product_id,is_enabled,position)');
+      await client.query(`create table if not exists product_variant_values (
+        variant_id uuid not null references product_variants(id) on delete cascade,
+        option_value_id uuid not null references product_option_values(id) on delete cascade,
+        primary key(variant_id,option_value_id)
+      )`);
+      await client.query(`create table if not exists product_variant_images (
+        id uuid primary key default gen_random_uuid(),variant_id uuid not null references product_variants(id) on delete cascade,
+        url text not null,alt_text text,sort_order integer not null default 0,created_at timestamptz not null default now()
+      )`);
+      await client.query('alter table if exists order_items add column if not exists product_variant_id uuid references product_variants(id) on delete set null');
+      await client.query('alter table if exists order_items add column if not exists variant_sku text');
+      await client.query("alter table if exists order_items add column if not exists selected_options jsonb not null default '{}'::jsonb");
+      await client.query('alter table if exists order_items add column if not exists variant_image_url text');
+      await client.query('alter table if exists order_items add column if not exists inventory_restored_at timestamptz');
+      await client.query('alter table if exists orders add column if not exists inventory_reserved_at timestamptz');
+      await client.query('alter table if exists orders add column if not exists inventory_restored_at timestamptz');
+      await client.query('commit');
+    } catch (error) {
+      await client.query('rollback'); variantSchemaReady=undefined; throw error;
+    } finally { client.release(); }
+  })();
+  return variantSchemaReady;
+}
+
+const cleanVariantText=(value,max=100)=>String(value||'').trim().replace(/\s+/g,' ').slice(0,max);
+function normalizeVariantModel(input,base={}) {
+  const provided=Array.isArray(input.options)||Array.isArray(input.variants);
+  if(!provided)return{provided:false,options:[],variants:[]};
+  const rawVariants=Array.isArray(input.variants)?input.variants:[];
+  let rawOptions=Array.isArray(input.options)?input.options:[];
+  if(!rawOptions.length&&rawVariants.length){const names=[];for(const variant of rawVariants){for(const name of Object.keys(variant.options||{}))if(!names.some(value=>value.toLowerCase()===name.toLowerCase()))names.push(name)}rawOptions=names.map(name=>({name,values:rawVariants.map(variant=>variant.options?.[name]).filter(Boolean)}))}
+  const options=[];
+  for(const [position,option] of rawOptions.entries()){
+    const name=cleanVariantText(option.name,80);if(!name)throw new Error('Every variant option needs a name.');
+    if(options.some(value=>value.name.toLowerCase()===name.toLowerCase()))throw new Error(`Variant option “${name}” is repeated.`);
+    const values=[...new Map((Array.isArray(option.values)?option.values:[]).map(value=>cleanVariantText(value,100)).filter(Boolean).map(value=>[value.toLowerCase(),value])).values()];
+    if(!values.length)throw new Error(`Add at least one value for ${name}.`);options.push({name,position,values});
+  }
+  if(!options.length){if(rawVariants.length)throw new Error('Add option names and values for these variants.');return{provided:true,options:[],variants:[]}}
+  if(!rawVariants.length)throw new Error('Generate or add at least one product variant.');
+  const optionByName=new Map(options.map(option=>[option.name.toLowerCase(),option])),seenCombinations=new Set(),seenSkus=new Set();
+  const variants=rawVariants.map((variant,index)=>{
+    const sourceOptions=variant.options&&typeof variant.options==='object'?variant.options:{};
+    const selected={};
+    for(const option of options){const key=Object.keys(sourceOptions).find(name=>name.toLowerCase()===option.name.toLowerCase()),value=cleanVariantText(key?sourceOptions[key]:'',100);if(!value)throw new Error(`Variant ${index+1} is missing ${option.name}.`);const saved=option.values.find(item=>item.toLowerCase()===value.toLowerCase());if(!saved)throw new Error(`${value} is not an allowed ${option.name} value.`);selected[option.name]=saved}
+    for(const name of Object.keys(sourceOptions))if(!optionByName.has(name.toLowerCase()))throw new Error(`Unknown variant option: ${name}.`);
+    const combination=options.map(option=>selected[option.name].toLowerCase()).join('\u001f');if(seenCombinations.has(combination))throw new Error('The same variant combination is listed more than once.');seenCombinations.add(combination);
+    const sku=cleanVariantText(variant.sku||`${base.sku||'VAR'}-${index+1}`,100);if(!sku)throw new Error(`Variant ${index+1} needs a SKU.`);if(seenSkus.has(sku.toLowerCase()))throw new Error(`Variant SKU ${sku} is repeated.`);seenSkus.add(sku.toLowerCase());
+    const price=Number(variant.price_inr??variant.price??base.price),mrpValue=Number(variant.compare_at_price_inr??variant.mrp??base.mrp),stock=Number(variant.stock_quantity??variant.stock??base.stock??0),weight=Number(variant.weight_grams??variant.weightGrams??base.weightGrams??500);
+    if(!Number.isFinite(price)||price<=0)throw new Error(`Enter a selling price for variant ${sku}.`);if(!Number.isInteger(stock)||stock<0)throw new Error(`Enter valid stock for variant ${sku}.`);if(!Number.isFinite(weight)||weight<1)throw new Error(`Enter valid weight for variant ${sku}.`);
+    const mrp=Number.isFinite(mrpValue)&&mrpValue>=price?mrpValue:null,image=cleanVariantText(variant.image_url||variant.image||'',2000),images=[...new Set((Array.isArray(variant.images)?variant.images:[image]).map(value=>String(value||'').trim()).filter(Boolean))];if(images.some(url=>!isWebUrl(url)))throw new Error(`Variant ${sku} has an invalid image URL.`);
+    return{id:/^[0-9a-f-]{36}$/i.test(String(variant.id||''))?String(variant.id):null,sku,price,mrp,stock,weightGrams:weight,barcode:cleanVariantText(variant.barcode,100),images,enabled:variant.is_enabled!==false&&variant.enabled!==false,isDefault:Boolean(variant.is_default??variant.isDefault),options:selected,position:index};
+  });
+  if(!variants.some(variant=>variant.enabled))throw new Error('Enable at least one product variant.');let chosen=variants.find(variant=>variant.isDefault&&variant.enabled)||variants.find(variant=>variant.enabled);variants.forEach(variant=>{variant.isDefault=variant===chosen});return{provided:true,options,variants};
+}
+
+async function syncProductVariants(client,productId,model,base={}) {
+  if(!model.provided)return;
+  const existing=(await client.query('select id,sku from product_variants where product_id=$1',[productId])).rows;
+  // Clear the partial unique default and temporary-rename existing SKUs so an
+  // admin can safely change the default or swap two variant SKUs in one save.
+  await client.query("update product_variants set is_default=false,sku='__mh_v43_tmp_'||replace(id::text,'-','') where product_id=$1",[productId]);
+  await client.query('delete from product_variant_values where variant_id in (select id from product_variants where product_id=$1)',[productId]);
+  await client.query('delete from product_variant_images where variant_id in (select id from product_variants where product_id=$1)',[productId]);
+  await client.query('delete from product_option_values where option_id in (select id from product_options where product_id=$1)',[productId]);
+  await client.query('delete from product_options where product_id=$1',[productId]);
+  // Keep removed variants as archived inventory records. Historical order lines
+  // retain their variant UUID so cancellation/return restores the exact SKU.
+  if(!model.variants.length){await client.query("update product_variants set archived_at=coalesce(archived_at,now()),is_enabled=false,is_default=false,updated_at=now() where product_id=$1",[productId]);return}
+  const optionValues=new Map();
+  for(const option of model.options){const saved=await client.query('insert into product_options(product_id,name,position) values($1,$2,$3) returning id',[productId,option.name,option.position]);for(const [position,value] of option.values.entries()){const row=await client.query('insert into product_option_values(option_id,value,position) values($1,$2,$3) returning id',[saved.rows[0].id,value,position]);optionValues.set(`${option.name.toLowerCase()}\u001f${value.toLowerCase()}`,row.rows[0].id)}}
+  const keep=[];
+  for(const variant of model.variants){const matched=existing.find(row=>row.id===variant.id)||existing.find(row=>String(row.sku).toLowerCase()===variant.sku.toLowerCase());let saved;
+    if(matched){saved=await client.query(`update product_variants set sku=$2,price_inr=$3,compare_at_price_inr=$4,stock_quantity=$5,weight_kg=$6,barcode=$7,is_enabled=$8,is_default=$9,position=$10,archived_at=null,updated_at=now() where id=$1 returning id`,[matched.id,variant.sku,variant.price,variant.mrp,variant.stock,variant.weightGrams/1000,variant.barcode||null,variant.enabled,variant.isDefault,variant.position])}
+    else saved=await client.query(`insert into product_variants(product_id,sku,price_inr,compare_at_price_inr,stock_quantity,weight_kg,barcode,is_enabled,is_default,position) values($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) returning id`,[productId,variant.sku,variant.price,variant.mrp,variant.stock,variant.weightGrams/1000,variant.barcode||null,variant.enabled,variant.isDefault,variant.position]);
+    const variantId=saved.rows[0].id;keep.push(variantId);for(const option of model.options)await client.query('insert into product_variant_values(variant_id,option_value_id) values($1,$2)',[variantId,optionValues.get(`${option.name.toLowerCase()}\u001f${variant.options[option.name].toLowerCase()}`)]);for(const [sortOrder,url] of variant.images.entries())await client.query('insert into product_variant_images(variant_id,url,alt_text,sort_order) values($1,$2,$3,$4)',[variantId,url,base.name||variant.sku,sortOrder]);
+  }
+  await client.query("update product_variants set archived_at=coalesce(archived_at,now()),is_enabled=false,is_default=false,updated_at=now() where product_id=$1 and not(id=any($2::uuid[]))",[productId,keep]);
+  const totals=await client.query(`select coalesce(sum(stock_quantity) filter(where is_enabled),0)::integer stock,
+    (array_agg(price_inr order by is_default desc,position) filter(where is_enabled))[1] price,
+    (array_agg(compare_at_price_inr order by is_default desc,position) filter(where is_enabled))[1] mrp,
+    (array_agg(weight_kg order by is_default desc,position) filter(where is_enabled))[1] weight from product_variants where product_id=$1 and archived_at is null`,[productId]);
+  await client.query('update products set price_inr=$2,compare_at_price_inr=$3,stock_quantity=$4,weight_kg=$5,updated_at=now() where id=$1',[productId,totals.rows[0].price,totals.rows[0].mrp,totals.rows[0].stock,totals.rows[0].weight]);
+}
+
 function productInput(input) {
   const name = String(input.name || '').trim();
   const category = String(input.category || '').trim();
@@ -76,16 +238,19 @@ function productInput(input) {
   const weightGrams = Number(input.weight_grams);
   const images = Array.isArray(input.images) ? input.images.map(value => String(value).trim()).filter(Boolean) : [];
   const videoUrl = String(input.video_url || '').trim();
+  const mrpValue=Number(input.mrp??input.compare_at_price_inr),mrp=Number.isFinite(mrpValue)&&mrpValue>=price?mrpValue:null;
   if (!name || name.length > 180 || !category || category.length > 80 || !sku || sku.length > 80) throw new Error('Enter a product name, category and SKU.');
   if (!Number.isFinite(price) || price <= 0 || price > 10000000) throw new Error('Enter a valid product price.');
   if (!Number.isInteger(stock) || stock < 0 || stock > 1000000) throw new Error('Enter a valid stock quantity.');
   if (!Number.isFinite(weightGrams) || weightGrams < 1 || weightGrams > 100000) throw new Error('Enter a valid weight in grams.');
   if (!images.length || images.length > 12 || images.some(url => !isWebUrl(url))) throw new Error('Add 1 to 12 valid photo links starting with https://.');
   if (videoUrl && !isWebUrl(videoUrl)) throw new Error('The video link must start with https://.');
-  return { name, category, sku, description, price, stock, weightGrams, images, videoUrl };
+  const variantModel=normalizeVariantModel(input,{name,sku,price,mrp,stock,weightGrams});
+  return { name, category, sku, description, price, mrp, stock, weightGrams, images, videoUrl, variantModel };
 }
 
 async function saveProduct(input, productId = null) {
+  await ensureVariantSchema();
   const value = productInput(input);
   const client = await database().connect();
   try {
@@ -99,23 +264,24 @@ async function saveProduct(input, productId = null) {
     if (productId) {
       result = await client.query(
         `update products set category_id=$1, sku=$2, name=$3, description=$4, specifications=$5::jsonb,
-         price_inr=$6, stock_quantity=$7, weight_kg=$8, is_active=true, updated_at=now() where id=$9 returning id`,
-        [category.rows[0].id, value.sku, value.name, value.description, specification, value.price, value.stock, value.weightGrams / 1000, productId]
+         price_inr=$6,compare_at_price_inr=$7,stock_quantity=$8,weight_kg=$9,is_active=true,updated_at=now() where id=$10 returning id`,
+        [category.rows[0].id,value.sku,value.name,value.description,specification,value.price,value.mrp,value.stock,value.weightGrams/1000,productId]
       );
       if (!result.rowCount) throw new Error('This product no longer exists.');
       await client.query('delete from product_images where product_id=$1', [productId]);
     } else {
       const slugBase = toSlug(value.name) || 'product';
       result = await client.query(
-        `insert into products (category_id, sku, name, slug, description, specifications, price_inr, stock_quantity, weight_kg)
-         values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9) returning id`,
-        [category.rows[0].id, value.sku, value.name, `${slugBase}-${toSlug(value.sku)}`, value.description, specification, value.price, value.stock, value.weightGrams / 1000]
+        `insert into products (category_id,sku,name,slug,description,specifications,price_inr,compare_at_price_inr,stock_quantity,weight_kg)
+         values ($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10) returning id`,
+        [category.rows[0].id,value.sku,value.name,`${slugBase}-${toSlug(value.sku)}`,value.description,specification,value.price,value.mrp,value.stock,value.weightGrams/1000]
       );
     }
     const id = result.rows[0].id;
     for (const [sortOrder, url] of value.images.entries()) {
       await client.query('insert into product_images (product_id, url, alt_text, sort_order) values ($1,$2,$3,$4)', [id, url, value.name, sortOrder]);
     }
+    await syncProductVariants(client,id,value.variantModel,value);
     await client.query('commit');
     const saved = await database().query(`${productFields} where p.id=$1${productGroup}`, [id]);
     return serializeProduct(saved.rows[0]);
@@ -126,6 +292,72 @@ async function saveProduct(input, productId = null) {
   } finally {
     client.release();
   }
+}
+
+async function productById(productId) {
+  await ensureVariantSchema();
+  const result=await database().query(`${productFields} where p.id=$1${productGroup}`,[productId]);
+  return result.rowCount?serializeProduct(result.rows[0]):null;
+}
+
+async function productBySku(sku) {
+  await ensureVariantSchema();
+  const result=await database().query(`${productFields} where lower(p.sku)=lower($1) and p.is_active=true and p.status='published'${productGroup}`,[String(sku||'')]);
+  return result.rowCount?serializeProduct(result.rows[0]):null;
+}
+
+async function checkoutCartItems(cart,queryable=database()) {
+  await ensureVariantSchema();
+  if(!Array.isArray(cart)||!cart.length||cart.length>50)throw new Error('Your cart is invalid.');
+  const lines=[];
+  for(const input of cart){const quantity=Number(input.qty??input.quantity),rawVariantId=String(input.variantId||input.variant_id||''),checkoutId=/^\d+$/.test(rawVariantId)?rawVariantId:String(input.checkoutVariantId||''),variantId=checkoutId?'':rawVariantId,sku=String(input.variantSku||input.sku||'').trim();
+    if(!Number.isInteger(quantity)||quantity<1||quantity>99)throw new Error('A cart quantity is invalid.');
+    let result;
+    if(variantId||sku)result=await queryable.query(`select p.id product_id,p.sku product_sku,p.name,p.checkout_product_id,p.price_inr product_price,
+      p.compare_at_price_inr product_mrp,p.stock_quantity product_stock,p.weight_kg product_weight,p.is_active,
+      pv.id variant_id,pv.sku variant_sku,pv.price_inr variant_price,pv.compare_at_price_inr variant_mrp,
+      pv.stock_quantity variant_stock,pv.weight_kg variant_weight,pv.checkout_variant_id,pv.is_enabled,
+      coalesce((select jsonb_object_agg(po.name,pov.value order by po.position) from product_variant_values pvv
+        join product_option_values pov on pov.id=pvv.option_value_id join product_options po on po.id=pov.option_id where pvv.variant_id=pv.id),'{}'::jsonb) selected_options,
+      coalesce((select url from product_variant_images where variant_id=pv.id order by sort_order limit 1),
+        (select url from product_images where product_id=p.id order by sort_order limit 1),'') image_url,
+      exists(select 1 from product_variants existing where existing.product_id=p.id and existing.archived_at is null) has_variants
+      from products p left join product_variants pv on pv.product_id=p.id and pv.archived_at is null and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and lower(pv.sku)=lower($2)) or ($3::text<>'' and pv.checkout_variant_id::text=$3))
+      where p.is_active=true and p.status='published' and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and (lower(pv.sku)=lower($2) or (lower(p.sku)=lower($2) and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null)))) or ($3::text<>'' and (pv.checkout_variant_id::text=$3 or (p.checkout_product_id::text=$3 and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null))))) limit 1`,[variantId,sku,checkoutId]);
+    if(!result?.rowCount)throw new Error('A cart item or selected variant is no longer available.');const row=result.rows[0],hasVariant=Boolean(row.variant_id);
+    if(row.has_variants&&!hasVariant)throw new Error(`${row.name} requires a variant selection.`);if(hasVariant&&!row.is_enabled)throw new Error(`${row.name} variant is disabled.`);
+    const stock=Number(hasVariant?row.variant_stock:row.product_stock);if(quantity>stock)throw new Error(`${row.name} does not have enough stock for the selected variant.`);
+    lines.push({productId:row.product_id,productSku:row.product_sku,name:row.name,variantId:row.variant_id||null,
+      variantSku:row.variant_sku||row.product_sku,selectedOptions:row.selected_options||{},price:Number(hasVariant?row.variant_price:row.product_price),
+      mrp:(hasVariant?row.variant_mrp:row.product_mrp)==null?null:Number(hasVariant?row.variant_mrp:row.product_mrp),stock,
+      weightGrams:Math.round(Number(hasVariant?row.variant_weight:row.product_weight)*1000),image:String(row.image_url||''),
+      checkoutProductId:Number(row.checkout_product_id),checkoutVariantId:Number(hasVariant?row.checkout_variant_id:row.checkout_product_id),quantity});
+  }
+  return lines;
+}
+
+async function shiprocketOrderItems(orderId) {
+  await ensureVariantSchema();
+  const result=await database().query(`select oi.product_name,coalesce(oi.variant_sku,oi.sku) sku,oi.selected_options,oi.unit_price_inr,
+    oi.quantity,coalesce(pv.weight_kg,p.weight_kg,.5) weight_kg,oi.variant_image_url
+    from order_items oi left join product_variants pv on pv.id=oi.product_variant_id left join products p on p.id=oi.product_id
+    where oi.order_id=$1 order by oi.id`,[orderId]);
+  return result.rows.map(row=>({name:row.product_name,sku:row.sku,options:row.selected_options||{},price:Number(row.unit_price_inr),quantity:Number(row.quantity),weightGrams:Math.round(Number(row.weight_kg)*1000),image:row.variant_image_url||''}));
+}
+
+async function restoreOrderItemInventory(client,itemId) {
+  const locked=await client.query('select id,product_id,product_variant_id,quantity,inventory_restored_at from order_items where id=$1 for update',[itemId]);
+  if(!locked.rowCount||locked.rows[0].inventory_restored_at)return false;const item=locked.rows[0];
+  if(item.product_variant_id){await client.query('update product_variants set stock_quantity=stock_quantity+$2,updated_at=now() where id=$1',[item.product_variant_id,item.quantity]);await client.query('update products set stock_quantity=(select coalesce(sum(stock_quantity) filter(where is_enabled and archived_at is null),0) from product_variants where product_id=$1),updated_at=now() where id=$1',[item.product_id])}
+  else if(item.product_id)await client.query('update products set stock_quantity=stock_quantity+$2,updated_at=now() where id=$1',[item.product_id,item.quantity]);
+  await client.query('update order_items set inventory_restored_at=now() where id=$1',[item.id]);return true;
+}
+
+async function restoreOrderInventory(client,orderId) {
+  const items=await client.query('select id from order_items where order_id=$1 and inventory_restored_at is null order by id for update',[orderId]);
+  for(const item of items.rows)await restoreOrderItemInventory(client,item.id);
+  if(items.rowCount)await client.query('update orders set inventory_restored_at=coalesce(inventory_restored_at,now()) where id=$1',[orderId]);
+  return items.rowCount;
 }
 
 async function deactivateProduct(productId) {
@@ -217,37 +449,33 @@ async function recordShiprocketOrder(order) {
   if (!order?.order_id) throw new Error('The checkout order id is missing.');
   await ensureOrderSchema();
   await ensureCustomerExperienceSchema();
+  await ensureVariantSchema();
   const client = await database().connect();
   try {
     await client.query('begin');
     const userId = await findOrCreateCustomer(client, order);
     const addressId = await saveOrderAddress(client, userId, order);
     const paymentType = String(order.payment_type || '').toUpperCase();
-    const orderResult = await client.query(
-      `insert into orders (user_id,address_id,status,payment_status,payment_method,subtotal_inr,discount_inr,wallet_used_inr,coins_used,shipping_inr,total_inr,shiprocket_order_id)
-       values ($1,$2,$3,$4,$5,$6,$7,0,0,$8,$9,$10)
-       on conflict (shiprocket_order_id) where shiprocket_order_id is not null do update set
-         user_id=excluded.user_id,address_id=coalesce(excluded.address_id,orders.address_id),
-         status=excluded.status,payment_status=excluded.payment_status,payment_method=excluded.payment_method,
-         subtotal_inr=excluded.subtotal_inr,discount_inr=excluded.discount_inr,shipping_inr=excluded.shipping_inr,total_inr=excluded.total_inr
-       returning id,order_number`,
-      [userId, addressId, statusForShiprocket(order.status), paymentForShiprocket(order.payment_status), paymentType === 'CASH_ON_DELIVERY' ? 'cod' : 'shiprocket', moneyValue(order.subtotal_price), moneyValue(order.total_discount), moneyValue(order.cod_charges), moneyValue(order.total_amount_payable), String(order.order_id)]
-    );
-    const savedOrder = orderResult.rows[0];
-    await client.query('delete from order_items where order_id=$1', [savedOrder.id]);
-    const supplierProducts = supplierCatalogueById();
-    const itemIds = (order.cart_data?.items || []).map(item => String(item.variant_id));
-    const products = itemIds.length ? await client.query('select id,sku,name,price_inr from products where sku = any($1::text[])', [Array.from(supplierProducts.values()).filter(product => itemIds.includes(String(product.id))).map(product => product.sku)]) : { rows: [] };
-    const databaseProducts = new Map(products.rows.map(product => [product.sku, product]));
-    for (const item of order.cart_data?.items || []) {
-      const supplierProduct = supplierProducts.get(String(item.variant_id));
-      if (!supplierProduct) continue;
-      const product = databaseProducts.get(supplierProduct.sku);
-      await client.query(
-        'insert into order_items (order_id,product_id,product_name,sku,unit_price_inr,quantity,coin_reward) values ($1,$2,$3,$4,$5,$6,0)',
-        [savedOrder.id, product?.id || null, product?.name || supplierProduct.name, supplierProduct.sku, moneyValue(product?.price_inr || supplierProduct.price_inr), Math.max(1, Number(item.quantity || 1))]
-      );
+    const status=statusForShiprocket(order.status),paymentStatus=paymentForShiprocket(order.payment_status),externalId=String(order.order_id);
+    const existing=await client.query('select id,order_number,status,inventory_reserved_at from orders where shiprocket_order_id=$1 for update',[externalId]);
+    let savedOrder;
+    if(existing.rowCount){savedOrder=existing.rows[0];await client.query(`update orders set user_id=$2,address_id=coalesce($3,address_id),status=$4,payment_status=$5,payment_method=$6,
+      subtotal_inr=$7,discount_inr=$8,shipping_inr=$9,total_inr=$10 where id=$1`,[savedOrder.id,userId,addressId,status,paymentStatus,paymentType==='CASH_ON_DELIVERY'?'cod':'shiprocket',moneyValue(order.subtotal_price),moneyValue(order.total_discount),moneyValue(order.cod_charges),moneyValue(order.total_amount_payable)])}
+    else{const created=await client.query(`insert into orders(user_id,address_id,status,payment_status,payment_method,subtotal_inr,discount_inr,wallet_used_inr,coins_used,shipping_inr,total_inr,shiprocket_order_id)
+      values($1,$2,$3,$4,$5,$6,$7,0,0,$8,$9,$10) returning id,order_number,status,inventory_reserved_at`,[userId,addressId,status,paymentStatus,paymentType==='CASH_ON_DELIVERY'?'cod':'shiprocket',moneyValue(order.subtotal_price),moneyValue(order.total_discount),moneyValue(order.cod_charges),moneyValue(order.total_amount_payable),externalId]);savedOrder=created.rows[0]}
+    const itemCount=await client.query('select count(*)::integer total from order_items where order_id=$1',[savedOrder.id]);
+    if(!Number(itemCount.rows[0].total)&&!['cancelled','returned','refunded'].includes(status)){
+      const lines=await checkoutCartItems((order.cart_data?.items||[]).map(item=>({variant_id:item.variant_id,quantity:item.quantity})),client);
+      if(!lines.length)throw new Error('The checkout order has no valid product variants.');
+    for(const line of lines){let reserved;if(line.variantId){reserved=await client.query('update product_variants set stock_quantity=stock_quantity-$2,updated_at=now() where id=$1 and is_enabled=true and archived_at is null and stock_quantity>=$2 returning id',[line.variantId,line.quantity]);if(reserved.rowCount)await client.query('update products set stock_quantity=(select coalesce(sum(stock_quantity) filter(where is_enabled and archived_at is null),0) from product_variants where product_id=$1),updated_at=now() where id=$1',[line.productId])}
+        else reserved=await client.query('update products set stock_quantity=stock_quantity-$2,updated_at=now() where id=$1 and is_active=true and stock_quantity>=$2 returning id',[line.productId,line.quantity]);
+        if(!reserved.rowCount)throw new Error(`${line.name} no longer has enough stock.`);
+        await client.query(`insert into order_items(order_id,product_id,product_variant_id,product_name,sku,variant_sku,selected_options,variant_image_url,unit_price_inr,quantity,coin_reward)
+          values($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,0)`,[savedOrder.id,line.productId,line.variantId,line.name,line.variantSku,line.variantSku,JSON.stringify(line.selectedOptions),line.image||null,moneyValue(line.price),line.quantity]);
+      }
+      await client.query('update orders set inventory_reserved_at=now(),inventory_restored_at=null where id=$1',[savedOrder.id]);
     }
+    if(['cancelled','returned','refunded'].includes(status))await restoreOrderInventory(client,savedOrder.id);
     const pendingCoins = await createPendingOrderCoins(client, savedOrder.id, userId, order.subtotal_price);
     await client.query('commit');
     return { id: savedOrder.id, orderNumber: savedOrder.order_number, pendingCoins };
@@ -292,13 +520,16 @@ async function releaseShiprocketShipment(orderId) {
 
 async function listAdminOrders() {
   await ensureOrderSchema();
+  await ensureVariantSchema();
   const result = await database().query(
     `select o.id,o.order_number,o.status,o.payment_status,o.payment_method,o.total_inr,o.created_at,o.packing_video_url,o.packing_video_note,o.packing_video_uploaded_at,
-            u.full_name,u.email,u.phone,coalesce(count(oi.id),0)::integer as item_count
+            u.full_name,u.email,u.phone,coalesce(count(oi.id),0)::integer as item_count,
+            coalesce(jsonb_agg(jsonb_build_object('name',oi.product_name,'sku',coalesce(oi.variant_sku,oi.sku),'options',oi.selected_options,
+              'quantity',oi.quantity,'image',coalesce(oi.variant_image_url,''))) filter(where oi.id is not null),'[]'::jsonb) items
        from orders o join users u on u.id=o.user_id left join order_items oi on oi.order_id=o.id
       group by o.id,u.full_name,u.email,u.phone order by o.created_at desc limit 500`
   );
-  return result.rows.map(order => ({ id: order.id, order_number: Number(order.order_number), status: order.status, payment_status: order.payment_status, payment_method: order.payment_method, total_inr: Number(order.total_inr), created_at: order.created_at, customer: order.full_name, email: order.email, phone: order.phone, item_count: order.item_count, packing_video_url: order.packing_video_url || '', packing_video_note: order.packing_video_note || '', packing_video_uploaded_at: order.packing_video_uploaded_at || null }));
+  return result.rows.map(order => ({ id: order.id, order_number: Number(order.order_number), status: order.status, payment_status: order.payment_status, payment_method: order.payment_method, total_inr: Number(order.total_inr), created_at: order.created_at, customer: order.full_name, email: order.email, phone: order.phone, item_count: order.item_count,items:order.items||[], packing_video_url: order.packing_video_url || '', packing_video_note: order.packing_video_note || '', packing_video_uploaded_at: order.packing_video_uploaded_at || null }));
 }
 
 function packingVideoInput(input) {
@@ -620,6 +851,7 @@ async function listAdminLoyalty() {
 
 async function recordShiprocketEvent(input) {
   await ensureCustomerExperienceSchema();
+  await ensureVariantSchema();
   const eventKey=String(input.eventKey||'').slice(0,200), type=String(input.type||'unknown').toLowerCase(), externalOrderId=String(input.externalOrderId||'').slice(0,200);
   if (!eventKey) throw new Error('Webhook event id is missing.');
   const client=await database().connect();
@@ -636,6 +868,7 @@ async function recordShiprocketEvent(input) {
       const delivered=/delivered/.test(type);
       const mapped=delivered?'delivered':terminal?(type.includes('return')?'returned':'cancelled'):null;
       if(mapped) await client.query('update orders set status=$2, delivered_at=case when $2=\'delivered\' then coalesce(delivered_at,now()) else delivered_at end where id=$1',[saved.id,mapped]);
+      if(mapped&&['cancelled','returned','refunded'].includes(mapped))await restoreOrderInventory(client,saved.id);
       if(delivered){
         const pending=await client.query("select coalesce(sum(coins),0)::integer coins from coin_ledger where order_id=$1 and status='pending'",[saved.id]);
         const coins=Math.max(0,Number(pending.rows[0].coins));
@@ -751,15 +984,16 @@ async function saveCustomerAddress(userId, input) {
 async function deleteCustomerAddress(userId,addressId) { const result=await database().query('delete from addresses where id=$1 and user_id=$2 returning id',[addressId,userId]); if(!result.rowCount) throw new Error('This saved address is no longer available.'); }
 
 async function customerReturnItems(userId) {
+  await ensureVariantSchema();
   const result = await database().query(
-    `select oi.id as order_item_id,oi.product_name,oi.quantity,o.order_number,o.delivered_at,
+    `select oi.id as order_item_id,oi.product_name,oi.quantity,coalesce(oi.variant_sku,oi.sku) variant_sku,oi.selected_options,o.order_number,o.delivered_at,
             rr.status as return_status
        from orders o join order_items oi on oi.order_id=o.id
        left join return_requests rr on rr.order_item_id=oi.id
       where o.user_id=$1 and (rr.id is not null or (o.status='delivered' and o.delivered_at >= now()-interval '3 days'))
       order by o.delivered_at desc nulls last,oi.product_name`, [userId]
   );
-  return result.rows.map(row => ({ orderItemId: row.order_item_id, productName: row.product_name, quantity: Number(row.quantity), orderNumber: Number(row.order_number), deliveredAt: row.delivered_at, returnStatus: row.return_status || null }));
+  return result.rows.map(row => ({ orderItemId: row.order_item_id, productName: row.product_name, quantity: Number(row.quantity),variantSku:row.variant_sku,selectedOptions:row.selected_options||{}, orderNumber: Number(row.order_number), deliveredAt: row.delivered_at, returnStatus: row.return_status || null }));
 }
 
 async function relinkCustomerOrders(userId) {
@@ -927,6 +1161,7 @@ async function customerDashboard(userId) {
 
 async function customerOrdersV41(userId, status = '') {
   await ensureAccountV41Schema();
+  await ensureVariantSchema();
   await relinkCustomerOrders(userId);
   const state = accountOrderStatus(status);
   const values = [userId];
@@ -934,8 +1169,10 @@ async function customerOrdersV41(userId, status = '') {
   if (state) values.push(state);
   const result = await database().query(`select o.order_number,o.status,o.payment_status,o.payment_method,o.created_at,o.total_inr,
     s.awb,s.courier_name,s.tracking_status,s.estimated_delivery_date,
-    coalesce(jsonb_agg(jsonb_build_object('sku',oi.sku,'name',oi.product_name,'quantity',oi.quantity,
-      'price',oi.unit_price_inr,'image',coalesce((select pi.url from product_images pi where pi.product_id=oi.product_id order by pi.sort_order limit 1),'')))
+    coalesce(jsonb_agg(jsonb_build_object('sku',coalesce(oi.variant_sku,oi.sku),'name',oi.product_name,'quantity',oi.quantity,
+      'variantId',oi.product_variant_id,'options',oi.selected_options,'price',oi.unit_price_inr,'image',coalesce(oi.variant_image_url,
+        (select pvi.url from product_variant_images pvi where pvi.variant_id=oi.product_variant_id order by pvi.sort_order limit 1),
+        (select pi.url from product_images pi where pi.product_id=oi.product_id order by pi.sort_order limit 1),'')))
       filter (where oi.id is not null),'[]'::jsonb) items
     from orders o left join shipments s on s.order_id=o.id left join order_items oi on oi.order_id=o.id
     where o.user_id=$1${statusSql} group by o.id,s.awb,s.courier_name,s.tracking_status,s.estimated_delivery_date
@@ -948,12 +1185,15 @@ async function customerOrdersV41(userId, status = '') {
 
 async function customerOrderDetails(userId, orderNumber) {
   await ensureAccountV41Schema();
+  await ensureVariantSchema();
   const result = await database().query(`select o.*,c.code coupon_code,
     jsonb_build_object('label',a.label,'fullName',a.full_name,'phone',a.phone,'line1',a.line1,'line2',a.line2,
       'city',a.city,'state',a.state,'pincode',a.pincode) shipping,
     row_to_json(s) shipment,
-    coalesce((select jsonb_agg(jsonb_build_object('id',oi.id,'sku',oi.sku,'name',oi.product_name,'quantity',oi.quantity,
-      'price',oi.unit_price_inr,'image',coalesce((select pi.url from product_images pi where pi.product_id=oi.product_id order by pi.sort_order limit 1),'')))
+    coalesce((select jsonb_agg(jsonb_build_object('id',oi.id,'sku',coalesce(oi.variant_sku,oi.sku),'name',oi.product_name,'quantity',oi.quantity,
+      'variantId',oi.product_variant_id,'options',oi.selected_options,'price',oi.unit_price_inr,'image',coalesce(oi.variant_image_url,
+        (select pvi.url from product_variant_images pvi where pvi.variant_id=oi.product_variant_id order by pvi.sort_order limit 1),
+        (select pi.url from product_images pi where pi.product_id=oi.product_id order by pi.sort_order limit 1),'')))
       from order_items oi where oi.order_id=o.id),'[]'::jsonb) items,
     coalesce((select jsonb_agg(jsonb_build_object('status',e.status,'message',e.message,'createdAt',e.created_at) order by e.created_at)
       from order_status_events e where e.order_id=o.id),'[]'::jsonb) timeline
@@ -970,6 +1210,7 @@ async function customerOrderDetails(userId, orderNumber) {
 
 async function cancelCustomerOrder(userId, orderNumber) {
   await ensureAccountV41Schema();
+  await ensureVariantSchema();
   const client=await database().connect();
   try {
     await client.query('begin');
@@ -978,6 +1219,7 @@ async function cancelCustomerOrder(userId, orderNumber) {
     if(!result.rowCount) throw new Error('This order is not available.');
     const row=result.rows[0];
     if(row.awb || !['pending','confirmed'].includes(row.status)) throw new Error('This order can no longer be cancelled.');
+    await restoreOrderInventory(client,row.id);
     await client.query("update orders set status='cancelled',cancelled_at=now() where id=$1",[row.id]);
     await client.query("insert into order_status_events(order_id,status,message) values($1,'cancelled','Cancelled by customer')",[row.id]);
     await client.query("insert into customer_notifications(user_id,order_id,notification_type,title,message) values($1,$2,'cancelled','Order cancelled',$3)",
@@ -987,13 +1229,18 @@ async function cancelCustomerOrder(userId, orderNumber) {
 }
 
 async function buyAgainItems(userId, orderNumber) {
-  const result=await database().query(`select p.id,p.sku,p.name,p.price_inr,p.compare_at_price_inr,p.stock_quantity,oi.quantity,
-    coalesce((select url from product_images where product_id=p.id order by sort_order limit 1),'') image
-    from orders o join order_items oi on oi.order_id=o.id join products p on p.id=oi.product_id
+  await ensureVariantSchema();
+  const result=await database().query(`select p.id,p.sku product_sku,p.name,coalesce(pv.id,oi.product_variant_id) variant_id,
+    coalesce(pv.sku,p.sku) sku,coalesce(pv.price_inr,p.price_inr) price_inr,coalesce(pv.compare_at_price_inr,p.compare_at_price_inr) compare_at_price_inr,
+    coalesce(pv.stock_quantity,p.stock_quantity) stock_quantity,coalesce(pv.is_enabled,true) variant_enabled,oi.quantity,
+    coalesce(oi.selected_options,'{}'::jsonb) selected_options,coalesce((select url from product_variant_images where variant_id=pv.id order by sort_order limit 1),
+      (select url from product_images where product_id=p.id order by sort_order limit 1),'') image
+    from orders o join order_items oi on oi.order_id=o.id join products p on p.id=oi.product_id left join product_variants pv on pv.id=oi.product_variant_id
     where o.user_id=$1 and o.order_number=$2 and p.is_active=true`,[userId,orderNumberValue(orderNumber)]);
   if(!result.rowCount) throw new Error('These products are no longer available.');
-  return result.rows.map(row=>({id:row.id,sku:row.sku,name:row.name,price:Number(row.price_inr),old:Number(row.compare_at_price_inr||0),
-    stock:Number(row.stock_quantity),qty:Math.min(Number(row.quantity),Number(row.stock_quantity)),img:row.image})).filter(item=>item.qty>0);
+  return result.rows.map(row=>({id:row.id,productId:row.id,parentSku:row.product_sku,variantId:row.variant_id||null,variantSku:row.sku,sku:row.sku,
+    selectedOptions:row.selected_options||{},name:row.name,price:Number(row.price_inr),old:Number(row.compare_at_price_inr||0),
+    stock:Number(row.stock_quantity),qty:row.variant_enabled?Math.min(Number(row.quantity),Number(row.stock_quantity)):0,img:row.image,variantImage:row.image})).filter(item=>item.qty>0);
 }
 
 async function customerNotifications(userId, limit=100) {
@@ -1028,12 +1275,14 @@ async function changeCustomerPassword(userId,input) {
 
 async function adminUpdateOrder(orderId,input) {
   await ensureAccountV41Schema();
+  await ensureVariantSchema();
   const status=accountOrderStatus(input.status);
   const allowed=['pending','confirmed','packed','shipped','delivered','cancelled','return_requested','returned','refunded'];
   if(!allowed.includes(status)) throw new Error('Choose a valid order status.');
   const client=await database().connect();
-  try{await client.query('begin');const order=await client.query('select id,user_id,order_number from orders where id=$1 for update',[orderId]);
+  try{await client.query('begin');const order=await client.query('select id,user_id,order_number,status from orders where id=$1 for update',[orderId]);
     if(!order.rowCount)throw new Error('This order no longer exists.');
+    if(['cancelled','returned','refunded'].includes(status))await restoreOrderInventory(client,orderId);
     await client.query('update orders set status=$2,delivered_at=case when $2=$3 then coalesce(delivered_at,now()) else delivered_at end where id=$1',[orderId,status,'delivered']);
     await client.query('insert into order_status_events(order_id,status,message) values($1,$2,$3)',[orderId,status,String(input.message||'Order status updated').slice(0,240)]);
     await client.query('insert into customer_notifications(user_id,order_id,notification_type,title,message) values($1,$2,$3,$4,$5)',
@@ -1054,14 +1303,15 @@ async function listAdminReturns() {
 }
 async function adminUpdateReturn(returnId,input) {
   await ensureAccountV41Schema();
+  await ensureVariantSchema();
   const status=String(input.status||'').toLowerCase();
   if(!['requested','approved','rejected','pickup_booked','received','refunded'].includes(status))throw new Error('Choose a valid return status.');
-  const result=await database().query(`update return_requests set status=$2,admin_note=$3,updated_at=now() where id=$1
-    returning user_id,order_id`,[returnId,status,String(input.note||'').slice(0,500)||null]);
-  if(!result.rowCount)throw new Error('This return request no longer exists.');
-  await database().query(`insert into customer_notifications(user_id,order_id,notification_type,title,message)
-    values($1,$2,'return','Return update',$3)`,[result.rows[0].user_id,result.rows[0].order_id,`Your return request is now ${status.replace(/_/g,' ')}.`]);
-  return {updated:true};
+  const client=await database().connect();try{await client.query('begin');const result=await client.query(`update return_requests set status=$2,admin_note=$3,updated_at=now() where id=$1
+    returning user_id,order_id,order_item_id`,[returnId,status,String(input.note||'').slice(0,500)||null]);
+    if(!result.rowCount)throw new Error('This return request no longer exists.');if(['received','refunded'].includes(status))await restoreOrderItemInventory(client,result.rows[0].order_item_id);
+    await client.query(`insert into customer_notifications(user_id,order_id,notification_type,title,message)
+      values($1,$2,'return','Return update',$3)`,[result.rows[0].user_id,result.rows[0].order_id,`Your return request is now ${status.replace(/_/g,' ')}.`]);await client.query('commit');return{updated:true};
+  }catch(error){await client.query('rollback');throw error}finally{client.release()}
 }
 
 async function guestOrderTracking(orderNumber, contactInput) {
@@ -1124,6 +1374,7 @@ function importProductSpecifications(data){const imported=data.specifications&&t
 async function serializedProductById(productId){const saved=await database().query(`${productFields} where p.id=$1${productGroup}`,[productId]);if(!saved.rowCount)throw new Error('The published product could not be loaded.');return serializeProduct(saved.rows[0])}
 async function publishProductImportItem(id,input,adminIdentity){
   await ensureProductImportSchema();
+  await ensureVariantSchema();
   const client=await database().connect();
   let productId,publishedAt,alreadyPublished=false;
   try{
@@ -1154,9 +1405,12 @@ async function publishProductImportItem(id,input,adminIdentity){
       if(!productId){const skuOwner=await client.query('select id from products where lower(sku)=lower($1) limit 1',[data.sku]);if(skuOwner.rowCount)throw new Error('This SKU already belongs to another product. Choose a different SKU.')}
       const slug=await uniqueImportSlugWithClient(client,data.title,data.sku,productId),specifications=JSON.stringify(importProductSpecifications({...data,sourceUrl:row.source_url}));
       const mrp=Number(data.mrp),compareAt=Number.isFinite(mrp)&&mrp>=data.price?mrp:null,weightKg=Math.max(.001,Number(data.weightGrams||500)/1000);
+      const variantModel=normalizeVariantModel(data,{name:data.title,sku:data.sku,price:data.price,mrp:compareAt,stock:data.stock,weightGrams:weightKg*1000});
+      if(variantModel.provided){data.options=variantModel.options.map(option=>({name:option.name,values:option.values}));data.variants=variantModel.variants.map(variant=>({id:variant.id,sku:variant.sku,price:variant.price,mrp:variant.mrp,discount:variant.mrp&&variant.mrp>variant.price?Math.round((variant.mrp-variant.price)*100/variant.mrp):0,stock:variant.stock,weightGrams:variant.weightGrams,barcode:variant.barcode,image:variant.images[0]||'',images:variant.images,enabled:variant.enabled,isDefault:variant.isDefault,options:variant.options}))}
       if(productId){const updated=await client.query(`update products set category_id=$1,sku=$2,name=$3,slug=$4,description=$5,specifications=$6::jsonb,price_inr=$7,compare_at_price_inr=$8,stock_quantity=$9,weight_kg=$10,is_active=true,status='published',published_at=coalesce(published_at,now()),updated_at=now() where id=$11 returning id,published_at`,[category.rows[0].id,data.sku,data.title,slug,String(data.description||data.shortDescription||''),specifications,data.price,compareAt,data.stock,weightKg,productId]);if(!updated.rowCount)throw new Error('The matching product no longer exists.');publishedAt=updated.rows[0].published_at;await client.query('delete from product_images where product_id=$1',[productId])}
       else{const created=await client.query(`insert into products(category_id,sku,name,slug,description,specifications,price_inr,compare_at_price_inr,stock_quantity,weight_kg,is_active,status,published_at) values($1,$2,$3,$4,$5,$6::jsonb,$7,$8,$9,$10,true,'published',now()) returning id,published_at`,[category.rows[0].id,data.sku,data.title,slug,String(data.description||data.shortDescription||''),specifications,data.price,compareAt,data.stock,weightKg]);productId=created.rows[0].id;publishedAt=created.rows[0].published_at}
       for(const [sortOrder,url] of data.selectedImages.entries())await client.query('insert into product_images(product_id,url,alt_text,sort_order) values($1,$2,$3,$4)',[productId,url,data.title,sortOrder]);
+      await syncProductVariants(client,productId,variantModel,{name:data.title,sku:data.sku,price:data.price,mrp:compareAt,stock:data.stock,weightGrams:weightKg*1000});
       await client.query('update product_import_media set is_selected=false,is_main=false where import_item_id=$1',[id]);
       for(const [sortOrder,url] of data.selectedImages.entries())await client.query('update product_import_media set is_selected=true,is_main=$3,sort_order=$4 where import_item_id=$1 and source_url=$2',[id,url,sortOrder===0,sortOrder]);
       const published=await client.query("update product_import_items set product_data=$2::jsonb,status='published',existing_product_id=$3,published_at=coalesce(published_at,now()),updated_at=now() where id=$1 returning published_at",[id,JSON.stringify(data),productId]);publishedAt=published.rows[0].published_at;
@@ -1255,4 +1509,4 @@ async function importPdfCatalogue() {
   }
 }
 
-module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };
+module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };

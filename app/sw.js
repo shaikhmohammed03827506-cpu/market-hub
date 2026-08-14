@@ -1,17 +1,20 @@
-const CACHE_NAME = 'mh-v41-1-mobile-navigation-auth';
+const CACHE_NAME = 'mh-v43-product-variants-1';
 const CORE = [
   '/',
   '/index.html',
   '/shop.html',
   '/product.html',
   '/wishlist.html',
+  '/account.html',
+  '/order-details.html',
   '/login.html',
   '/register.html',
   '/track-order.html',
   '/offline.html',
   '/manifest.webmanifest',
-  '/storefront-v40.js?v=40-global-cart-wishlist-hotfix-1',
-  '/storefront-v40.css?v=40-global-cart-wishlist-hotfix-1',
+  '/storefront-v40.js?v=43-product-variants-1',
+  '/storefront-v40.css?v=43-product-variants-1',
+  '/product.js?v=43-product-variants-1',
   '/mobile-navigation-v41-1.js?v=41.1',
   '/mobile-navigation-v41-1.css?v=41.1',
   '/auth-v41-1.js',

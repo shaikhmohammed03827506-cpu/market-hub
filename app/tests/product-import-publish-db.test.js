@@ -3,13 +3,13 @@ const Module=require('module');
 const path=require('path');
 const publishedAt=new Date('2026-08-04T12:00:00.000Z');
 const state={
-  item:{id:'11111111-1111-4111-8111-111111111111',source_url:'https://www.amazon.in/dp/B0ABC12345',source_url_hash:'source-hash',source_domain:'www.amazon.in',source_product_id:'B0ABC12345',source_sku:'MH-HOME-1',title:'Imported Bottle',status:'draft',duplicate_reason:null,existing_product_id:null,published_at:null,product_data:{title:'Imported Bottle',brand:'Fixture Brand',category:'Home & Kitchen',sku:'MH-HOME-1',description:'Imported description',price:1499,mrp:1999,discount:25,stock:99,weightGrams:500,selectedImages:['https://example.com/main.jpg','https://example.com/side.jpg'],variants:[{color:'Blue'}],specifications:{Material:'Steel'},tags:['bottle']}},
-  product:null,images:[],history:0,audit:0,creates:0
+  item:{id:'11111111-1111-4111-8111-111111111111',source_url:'https://www.amazon.in/dp/B0ABC12345',source_url_hash:'source-hash',source_domain:'www.amazon.in',source_product_id:'B0ABC12345',source_sku:'MH-HOME-1',title:'Imported Bottle',status:'draft',duplicate_reason:null,existing_product_id:null,published_at:null,product_data:{title:'Imported Bottle',brand:'Fixture Brand',category:'Home & Kitchen',sku:'MH-HOME-1',description:'Imported description',price:1499,mrp:1999,discount:25,stock:99,weightGrams:500,selectedImages:['https://example.com/main.jpg','https://example.com/side.jpg'],options:[{name:'Colour',values:['Blue']}],variants:[{sku:'MH-HOME-1-BLUE',price:1499,mrp:1999,stock:7,weightGrams:500,enabled:true,isDefault:true,options:{Colour:'Blue'},images:['https://example.com/main.jpg']}],specifications:{Material:'Steel'},tags:['bottle']}},
+  product:null,images:[],variantImages:[],variants:[],history:0,audit:0,creates:0
 };
 function result(rows=[]){return{rows,rowCount:rows.length}}
 async function query(sql,params=[]){
   const text=String(sql).replace(/\s+/g,' ').trim().toLowerCase();
-  if(text==='begin'||text==='commit'||text==='rollback'||text.startsWith('create ')||text.startsWith('alter ')||text.startsWith('update product_import_settings')||text.startsWith('insert into product_import_settings'))return result();
+  if(text==='begin'||text==='commit'||text==='rollback'||text.startsWith('create ')||text.startsWith('alter ')||text.startsWith('update product_import_settings')||text.startsWith('insert into product_import_settings')||text.startsWith("update products set checkout_product_id="))return result();
   if(text.startsWith('select * from product_import_items')&&text.includes('for update'))return result([{...state.item}]);
   if(text.startsWith('select status,source_url from product_import_items'))return result([{status:state.item.status,source_url:state.item.source_url}]);
   if(text.startsWith('select id,name from categories'))return result([{id:'33333333-3333-4333-8333-333333333333',name:'Home & Kitchen'}]);
@@ -22,12 +22,21 @@ async function query(sql,params=[]){
     return result([{id:state.product.id,published_at:publishedAt}]);
   }
   if(text.startsWith('insert into product_images')){state.images.push({url:params[1],sort_order:params[3]});return result()}
+  if(text.startsWith('select id,sku from product_variants'))return result(state.variants.map(variant=>({id:variant.id,sku:variant.sku})));
+  if(text.startsWith('delete from product_variant')||text.startsWith('delete from product_option')||text.startsWith('update product_variants set is_default')||text.startsWith('update product_variants set archived_at'))return result();
+  if(text.startsWith('insert into product_options'))return result([{id:'44444444-4444-4444-8444-444444444444'}]);
+  if(text.startsWith('insert into product_option_values'))return result([{id:'55555555-5555-4555-8555-555555555555'}]);
+  if(text.startsWith('insert into product_variants')){const variant={id:'66666666-6666-4666-8666-666666666666',sku:params[1],price_inr:params[2],compare_at_price_inr:params[3],stock_quantity:params[4],weight_kg:params[5],barcode:params[6],is_enabled:params[7],is_default:params[8],options:{Colour:'Blue'}};state.variants=[variant];return result([{id:variant.id}])}
+  if(text.startsWith('insert into product_variant_values'))return result();
+  if(text.startsWith('insert into product_variant_images')){state.variantImages.push({url:params[1],sort_order:params[3]});return result()}
+  if(text.startsWith('select coalesce(sum(stock_quantity)'))return result([{stock:7,price:1499,mrp:1999,weight:.5}]);
+  if(text.startsWith('update products set price_inr=')){state.product={...state.product,price_inr:1499,compare_at_price_inr:1999,stock_quantity:7,weight_kg:.5};return result()}
   if(text.startsWith('update product_import_media'))return result();
   if(text.startsWith('update product_import_items set product_data')){state.item={...state.item,product_data:JSON.parse(params[1]),status:'published',existing_product_id:params[2],published_at:publishedAt};return result([{published_at:publishedAt}])}
   if(text.startsWith('insert into product_source_mappings'))return result();
   if(text.startsWith('insert into product_import_history')){state.history++;return result()}
   if(text.startsWith('insert into product_import_audit')){state.audit++;return result()}
-  if(text.startsWith('select p.id, p.sku'))return result([{...state.product,images:state.images.map(image=>({url:image.url,alt_text:'Imported Bottle',sort_order:image.sort_order}))}]);
+  if(text.startsWith('select p.id, p.sku'))return result([{...state.product,checkout_product_id:1000000000,status:'published',images:state.images.map(image=>({url:image.url,alt_text:'Imported Bottle',sort_order:image.sort_order})),options:[{id:'44444444-4444-4444-8444-444444444444',name:'Colour',position:0,values:[{id:'55555555-5555-4555-8555-555555555555',value:'Blue',position:0}]}],variants:state.variants.map(variant=>({...variant,checkout_variant_id:1000000001,images:state.variantImages.map(image=>({url:image.url,sort_order:image.sort_order}))}))}]);
   throw new Error(`Unhandled test SQL: ${text}`);
 }
 class FakePool{connect(){return Promise.resolve({query,release(){}})}query(sql,params){return query(sql,params)}}
@@ -41,7 +50,7 @@ const db=require(path.join(__dirname,'..','db.js'));
   assert.equal(first.status,'published');assert.equal(first.alreadyPublished,false);assert.equal(second.alreadyPublished,true);
   assert.equal(first.product.id,second.product.id);assert.equal(state.creates,1);assert.equal(state.history,1);assert.equal(state.audit,1);
   assert.deepEqual(state.images.map(image=>image.url),['https://example.com/main.jpg','https://example.com/side.jpg']);
-  assert.equal(first.product.compare_at_price_inr,1999);assert.equal(first.product.stock_quantity,99);assert.equal(state.product.specifications.brand,'Fixture Brand');assert.deepEqual(state.product.specifications.variants,[{color:'Blue'}]);
+  assert.equal(first.product.compare_at_price_inr,1999);assert.equal(first.product.stock_quantity,7);assert.equal(first.product.variants.length,1);assert.equal(first.product.variants[0].sku,'MH-HOME-1-BLUE');assert.deepEqual(first.product.variants[0].options,{Colour:'Blue'});assert.equal(state.product.specifications.brand,'Fixture Brand');
   assert.equal(first.productUrl,'/product.html?sku=MH-HOME-1');assert(state.item.published_at);
   await assert.rejects(()=>db.deleteProductImportDraft(state.item.id,'test-admin'),/Published products cannot be deleted/);
   console.log('product-import transactional publish tests passed');

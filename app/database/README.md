@@ -15,3 +15,5 @@ It includes customers, addresses, products, orders, wallet refunds, coins, refer
 ## Next deployment step
 
 Create a hosted PostgreSQL database (for example, Supabase, Neon, or a managed PostgreSQL service), then run `schema.sql` once. Store its private connection string as `DATABASE_URL` in the server environment—not in frontend files or chat.
+
+For an existing MARKET HUB database, run `v43-product-variants.sql` once before deploying v43. The migration is idempotent, preserves simple products, and adds normalized product options, option values, variants, variant values, variant images, checkout IDs, and immutable order-item variant snapshots.

@@ -1,6 +1,7 @@
 -- MARKET HUB production database (PostgreSQL 15+)
 -- Apply this file to a new PostgreSQL database before connecting the server.
 create extension if not exists pgcrypto;
+create sequence market_hub_checkout_id_seq as bigint start with 1000000000;
 
 create type user_role as enum ('customer','staff','admin');
 create type order_status as enum ('pending','confirmed','packed','shipped','delivered','cancelled','return_requested','returned','refunded');
@@ -19,8 +20,6 @@ create table users (
   referral_code text not null unique,
   referred_by uuid references users(id),
   is_active boolean not null default true,
-  status text not null default 'published',
-  published_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -67,9 +66,14 @@ create table products (
   breadth_cm numeric(8,2) not null default 10 check (breadth_cm > 0),
   height_cm numeric(8,2) not null default 10 check (height_cm > 0),
   is_active boolean not null default true,
+  status text not null default 'published',
+  published_at timestamptz,
+  checkout_product_id bigint not null default nextval('market_hub_checkout_id_seq'),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+create unique index products_checkout_product_id_unique on products(checkout_product_id);
+create index products_publication_idx on products(status,is_active,published_at desc);
 
 create table product_images (
   id uuid primary key default gen_random_uuid(),
@@ -78,6 +82,68 @@ create table product_images (
   alt_text text,
   sort_order integer not null default 0
 );
+
+create table product_options (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products(id) on delete cascade,
+  name text not null check (btrim(name) <> ''),
+  position integer not null default 0 check (position >= 0),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+create unique index product_options_product_name_unique on product_options(product_id,lower(name));
+create index product_options_product_position on product_options(product_id,position,id);
+
+create table product_option_values (
+  id uuid primary key default gen_random_uuid(),
+  option_id uuid not null references product_options(id) on delete cascade,
+  value text not null check (btrim(value) <> ''),
+  position integer not null default 0 check (position >= 0),
+  created_at timestamptz not null default now()
+);
+create unique index product_option_values_option_value_unique on product_option_values(option_id,lower(value));
+create index product_option_values_option_position on product_option_values(option_id,position,id);
+create index product_option_values_search_idx on product_option_values using gin(to_tsvector('simple',value));
+
+create table product_variants (
+  id uuid primary key default gen_random_uuid(),
+  product_id uuid not null references products(id) on delete cascade,
+  sku text not null unique check (btrim(sku) <> ''),
+  price_inr numeric(10,2) not null check (price_inr > 0),
+  compare_at_price_inr numeric(10,2),
+  stock_quantity integer not null default 0 check (stock_quantity >= 0),
+  weight_kg numeric(8,3) not null default 0.5 check (weight_kg > 0),
+  barcode text,
+  is_enabled boolean not null default true,
+  is_default boolean not null default false,
+  position integer not null default 0 check (position >= 0),
+  checkout_variant_id bigint not null default nextval('market_hub_checkout_id_seq'),
+  archived_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  check (compare_at_price_inr is null or compare_at_price_inr >= price_inr)
+);
+create unique index product_variants_checkout_id_unique on product_variants(checkout_variant_id);
+create unique index product_variants_one_default on product_variants(product_id) where is_default;
+create index product_variants_product_enabled on product_variants(product_id,is_enabled,position);
+create index product_variants_search_idx on product_variants using gin(to_tsvector('simple',coalesce(sku,'')||' '||coalesce(barcode,'')));
+
+create table product_variant_values (
+  variant_id uuid not null references product_variants(id) on delete cascade,
+  option_value_id uuid not null references product_option_values(id) on delete cascade,
+  primary key (variant_id,option_value_id)
+);
+create index product_variant_values_option_value on product_variant_values(option_value_id,variant_id);
+
+create table product_variant_images (
+  id uuid primary key default gen_random_uuid(),
+  variant_id uuid not null references product_variants(id) on delete cascade,
+  url text not null check (btrim(url) <> ''),
+  alt_text text,
+  sort_order integer not null default 0 check (sort_order >= 0),
+  created_at timestamptz not null default now()
+);
+create index product_variant_images_variant_sort on product_variant_images(variant_id,sort_order,id);
 
 create table coupons (
   id uuid primary key default gen_random_uuid(),
@@ -107,6 +173,8 @@ create table orders (
   total_inr integer not null check (total_inr >= 0),
   coupon_id uuid references coupons(id),
   shiprocket_order_id text,
+  inventory_reserved_at timestamptz,
+  inventory_restored_at timestamptz,
   created_at timestamptz not null default now(),
   delivered_at timestamptz
 );
@@ -116,12 +184,18 @@ create table order_items (
   id uuid primary key default gen_random_uuid(),
   order_id uuid not null references orders(id) on delete cascade,
   product_id uuid references products(id),
+  product_variant_id uuid references product_variants(id) on delete set null,
   product_name text not null,
   sku text not null,
+  variant_sku text,
+  selected_options jsonb not null default '{}'::jsonb,
+  variant_image_url text,
   unit_price_inr integer not null check (unit_price_inr >= 0),
   quantity integer not null check (quantity > 0),
-  coin_reward integer not null default 0 check (coin_reward >= 0)
+  coin_reward integer not null default 0 check (coin_reward >= 0),
+  inventory_restored_at timestamptz
 );
+create index order_items_product_variant on order_items(product_variant_id) where product_variant_id is not null;
 
 create table wallet_transactions (
   id uuid primary key default gen_random_uuid(),

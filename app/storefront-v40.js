@@ -10,10 +10,40 @@
     '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
   }[char]));
   const money = value => `₹${Number(value || 0).toLocaleString('en-IN')}`;
-  const productKey = item => String(item.sku || item.id);
+  const productKey = item => String(item.parentSku || item.sku || item.id);
+  const cartLineKey = item => String(item.lineKey || (item.variantId || item.variantSku
+    ? `variant:${item.variantId || item.variantSku}`
+    : `product:${item.parentSku || item.sku || item.id}`));
+  const optionEntries = value => value && typeof value === 'object' && !Array.isArray(value)
+    ? Object.entries(value).filter(([, selected]) => String(selected || '').trim()) : [];
+  const optionLabel = value => optionEntries(value).map(([name, selected]) => `${name}: ${selected}`).join(' / ');
   const normalizeProduct = item => {
     const price = Number(item.price_inr ?? item.price ?? 0);
     const originalPrice = Math.max(price, Number(item.original_price_inr ?? item.mrp_inr ?? item.compare_at_price_inr ?? price));
+    const gallery = [...new Set([...(Array.isArray(item.gallery) ? item.gallery : []), item.image_url, item.img, item.image].map(String).filter(Boolean))];
+    const options = (Array.isArray(item.options) ? item.options : []).map((option, position) => ({
+      id: option.id || '', name: String(option.name || '').trim(), position: Number(option.position ?? position),
+      values: (Array.isArray(option.values) ? option.values : []).map((value, valuePosition) => ({
+        id: value && typeof value === 'object' ? value.id || '' : '',
+        value: String(value && typeof value === 'object' ? value.value : value).trim(),
+        position: Number(value && typeof value === 'object' ? value.position ?? valuePosition : valuePosition)
+      })).filter(value => value.value)
+    })).filter(option => option.name && option.values.length);
+    const variants = (Array.isArray(item.variants) ? item.variants : []).map((variant, position) => {
+      const variantPrice = Number(variant.price_inr ?? variant.price ?? price);
+      const variantMrpValue = Number(variant.compare_at_price_inr ?? variant.mrp ?? originalPrice);
+      const variantMrp = Math.max(variantPrice, Number.isFinite(variantMrpValue) ? variantMrpValue : variantPrice);
+      const images = [...new Set([...(Array.isArray(variant.gallery) ? variant.gallery : []), ...(Array.isArray(variant.images) ? variant.images : []), variant.image_url, variant.image].map(String).filter(Boolean))];
+      return {
+        id: String(variant.id || ''), sku: String(variant.sku || ''), price: variantPrice, originalPrice: variantMrp,
+        discount: variantMrp > variantPrice ? Math.round((variantMrp - variantPrice) / variantMrp * 100) : 0,
+        stock: Math.max(0, Number(variant.stock_quantity ?? variant.stock ?? 0)),
+        weightGrams: Math.max(1, Number(variant.weight_grams ?? variant.weightGrams ?? 500)),
+        barcode: String(variant.barcode || ''), enabled: variant.is_enabled !== false && variant.enabled !== false,
+        isDefault: Boolean(variant.is_default ?? variant.isDefault), options: variant.options && typeof variant.options === 'object' ? {...variant.options} : {},
+        image: images[0] || gallery[0] || 'assets/market-hub-logo.png', gallery: images, position
+      };
+    });
     return ({
     id: item.id,
     sku: String(item.sku || item.id || ''),
@@ -24,15 +54,35 @@
     discount: originalPrice > price ? Math.round((originalPrice - price) / originalPrice * 100) : 0,
     rating: Number(item.average_rating ?? item.rating_value ?? item.rating ?? 4.5),
     coins: Math.max(0, Number(item.coins ?? Math.floor(price / 10))),
-    image: String(item.image_url || item.img || 'assets/market-hub-logo.png'),
+    image: String(item.image_url || item.img || item.image || gallery[0] || 'assets/market-hub-logo.png'), gallery,
     stock: Math.max(0, Number(item.stock_quantity ?? item.stock ?? 99)),
-    delivery: String(item.delivery_label || 'Fast delivery')
+    delivery: String(item.delivery_label || 'Fast delivery'), options, variants, hasVariants: variants.length > 0
   });};
+
+  function resolveVariant(product, selection) {
+    const item = normalizeProduct(product);
+    if (!item.variants.length) return null;
+    if (typeof selection === 'string') return item.variants.find(variant => variant.id === selection || variant.sku === selection) || null;
+    const selected = selection && typeof selection === 'object' ? selection : {};
+    return item.variants.find(variant => item.options.every(option => String(variant.options[option.name] || '').toLowerCase() === String(selected[option.name] || '').toLowerCase())) || null;
+  }
+
+  function defaultVariant(product) {
+    const item = normalizeProduct(product);
+    return item.variants.find(variant => variant.enabled && variant.isDefault) || item.variants.find(variant => variant.enabled) || null;
+  }
 
   function readCart() {
     try {
       const rows = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
-      return Array.isArray(rows) ? rows : [];
+      return Array.isArray(rows) ? rows.map(row => {
+        const parentSku = String(row.parentSku || row.productSku || row.sku || row.id || '');
+        const variantId = String(row.variantId || row.productVariantId || '');
+        const variantSku = String(row.variantSku || (variantId ? row.sku : '') || '');
+        return {...row, parentSku, variantId:variantId || null, variantSku:variantSku || null,
+          selectedOptions:row.selectedOptions && typeof row.selectedOptions === 'object' ? row.selectedOptions : {},
+          lineKey:cartLineKey({...row,parentSku,variantId,variantSku})};
+      }).filter(row => row.parentSku) : [];
     } catch {
       return [];
     }
@@ -128,11 +178,11 @@
     const list = document.getElementById('cartItems');
     if (!list) return;
     list.innerHTML = cart.length ? cart.map(item => {
-      const key = escapeHtml(productKey(item));
+      const key = escapeHtml(cartLineKey(item));
       const qty = Math.max(1, Number(item.qty || 1));
       return `<article class="cart-row mh-cart-item">
         <img loading="lazy" src="${escapeHtml(item.img || 'assets/market-hub-logo.png')}" alt="${escapeHtml(item.name)}">
-        <div><h4>${escapeHtml(item.name)}</h4><p>${money(item.price)} × ${qty}</p>
+        <div><h4>${escapeHtml(item.name)}</h4>${(optionLabel(item.selectedOptions) || item.variantSku) ? `<small class="mh-cart-options">${escapeHtml(optionLabel(item.selectedOptions))}${item.variantSku ? ` · ${escapeHtml(item.variantSku)}` : ''}</small>` : ''}<p>${money(item.price)} × ${qty}</p>
           <div class="mh-cart-quantity">
             <button type="button" data-cart-qty="-1" data-cart-key="${key}" aria-label="Decrease quantity">−</button>
             <b>${qty}</b>
@@ -169,11 +219,22 @@
   function addToCart(item, options = {}) {
     const product = normalizeProduct(item);
     registerProducts([product]);
-    const key = productKey(product);
-    const found = cart.find(row => productKey(row) === key);
+    const variant = product.hasVariants ? resolveVariant(product, options.variantId || options.selectedOptions) : null;
+    if (product.hasVariants && !variant) throw new Error('Choose all product options before adding this item.');
+    if (variant && (!variant.enabled || variant.stock < 1)) throw new Error('This product variant is currently unavailable.');
+    if (!variant && product.stock < 1) throw new Error('This product is currently out of stock.');
+    const line = {
+      id:product.id, productId:product.id, parentSku:product.sku, sku:variant?.sku || product.sku,
+      variantId:variant?.id || null, variantSku:variant?.sku || null, selectedOptions:variant?.options || {},
+      name:product.name, price:variant?.price ?? product.price, img:variant?.image || product.image,
+      stock:variant?.stock ?? product.stock
+    };
+    line.lineKey = cartLineKey(line);
+    const found = cart.find(row => cartLineKey(row) === line.lineKey);
     const amount = Math.max(1, Math.min(99, Number(options.quantity) || 1));
-    if (found) found.qty = Math.min(99, Number(found.qty || 1) + amount);
-    else cart.push({ id: product.id, sku: product.sku, name: product.name, price: product.price, img: product.image, qty: amount });
+    const maximum = Math.max(1, Number(line.stock || 0));
+    if (found) found.qty = Math.min(maximum, Number(found.qty || 1) + amount);
+    else cart.push({...line, qty:Math.min(maximum, amount)});
     saveCart();
     openCart();
     const drawer = document.getElementById('marketHubMiniCart');
@@ -183,14 +244,14 @@
   }
 
   function changeQuantity(key, delta) {
-    const item = cart.find(row => productKey(row) === String(key));
+    const item = cart.find(row => cartLineKey(row) === String(key));
     if (!item) return;
-    item.qty = Math.max(1, Math.min(99, Number(item.qty || 1) + Number(delta || 0)));
+    item.qty = Math.max(1, Math.min(Math.max(1, Number(item.stock || 99)), Number(item.qty || 1) + Number(delta || 0)));
     saveCart();
   }
 
   function remove(key) {
-    cart = cart.filter(row => productKey(row) !== String(key));
+    cart = cart.filter(row => cartLineKey(row) !== String(key));
     saveCart();
   }
 
@@ -209,7 +270,12 @@
       const response = await fetch('/api/checkout/shiprocket/access-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart: cart.map(item => ({ sku: item.sku, qty: item.qty })) })
+        body: JSON.stringify({ cart: cart.map(item => ({
+          sku: item.variantSku || item.parentSku || item.sku,
+          variantSku: item.variantSku || undefined,
+          variantId: item.variantId || undefined,
+          qty: item.qty
+        })) })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Checkout could not start.');
@@ -235,17 +301,25 @@
     const key = escapeHtml(productKey(item));
     const url = `product.html?sku=${encodeURIComponent(item.sku)}`;
     const wished = wishes.has(String(item.sku));
-    return `<article class="shop-card mh-product-card" data-product-key="${key}">
-      <span class="mh-discount-badge">${item.discount ? `${item.discount}% OFF` : 'BEST VALUE'}</span>
+    const initial = defaultVariant(item);
+    const displayPrice = initial?.price ?? item.price;
+    const displayOriginal = initial?.originalPrice ?? item.originalPrice;
+    const displayDiscount = initial?.discount ?? item.discount;
+    const displayStock = initial?.stock ?? item.stock;
+    const displayImage = initial?.image || item.image;
+    const controls = item.hasVariants ? `<div class="mh-card-options" aria-label="Choose product options">${item.options.map(option => `<label>${escapeHtml(option.name)}<select data-mh-card-option="${escapeHtml(option.name)}">${option.values.map(value => `<option value="${escapeHtml(value.value)}"${String(initial?.options?.[option.name] || '').toLowerCase() === value.value.toLowerCase() ? ' selected' : ''}>${escapeHtml(value.value)}</option>`).join('')}</select></label>`).join('')}</div>` : '';
+    return `<article class="shop-card mh-product-card" data-product-key="${key}" data-mh-product-key="${key}">
+      <span class="mh-discount-badge">${displayDiscount ? `${displayDiscount}% OFF` : 'BEST VALUE'}</span>
       <button class="mh-wishlist-heart${wished ? ' is-wished' : ''}" type="button" data-mh-wishlist-toggle="${key}" aria-label="Save ${escapeHtml(item.name)} to wishlist" aria-pressed="${wished}">${wished ? '♥' : '♡'}</button>
-      <a class="shop-image" href="${url}"><img loading="lazy" decoding="async" src="${escapeHtml(item.image)}" alt="${escapeHtml(item.name)}"></a>
+      <a class="shop-image" href="${url}"><img loading="lazy" decoding="async" src="${escapeHtml(displayImage)}" alt="${escapeHtml(item.name)}"></a>
       <div class="shop-card-copy">
         <span>${escapeHtml(item.category)}</span>
         <h3><a href="${url}">${escapeHtml(item.name)}</a></h3>
         <div class="mh-rating" aria-label="${item.rating.toFixed(1)} out of 5">★ ${item.rating.toFixed(1)}</div>
-        <div class="mh-card-price"><b>${money(item.price)}</b><del>${money(item.originalPrice)}</del></div>
+        <div class="mh-card-price"><b>${money(displayPrice)}</b><del>${money(displayOriginal)}</del></div>
+        ${controls}
         <div class="mh-card-meta"><small>✦ ${item.coins} Coins</small><small>${item.stock} in stock</small><small>⚡ ${escapeHtml(item.delivery)}</small></div>
-        <button type="button" data-mh-add-to-cart="${key}">${options.buttonText || 'Quick add'}</button>
+        <button type="button" data-mh-add-to-cart="${key}"${initial ? ` data-mh-variant-id="${escapeHtml(initial.id)}"` : ''}${displayStock < 1 ? ' disabled' : ''}>${displayStock < 1 ? 'Out of stock' : (options.buttonText || 'Quick add')}</button>
       </div>
     </article>`;
   }
@@ -299,6 +373,36 @@
     return data;
   }
 
+  function updateCardVariant(select) {
+    const cardNode = select.closest('[data-mh-product-key]');
+    const product = cardNode && productIndex.get(String(cardNode.dataset.mhProductKey));
+    if (!product) return;
+    const selected = {};
+    cardNode.querySelectorAll('[data-mh-card-option]').forEach(control => { selected[control.dataset.mhCardOption] = control.value; });
+    const variant = resolveVariant(product, selected);
+    const addButton = cardNode.querySelector('[data-mh-add-to-cart]');
+    const price = cardNode.querySelector('.mh-card-price b');
+    const original = cardNode.querySelector('.mh-card-price del');
+    const discount = cardNode.querySelector('.mh-discount-badge');
+    const stock = cardNode.querySelector('.mh-card-meta small:nth-child(2)');
+    const image = cardNode.querySelector('.shop-image img');
+    if (!variant || !variant.enabled || variant.stock < 1) {
+      addButton.disabled = true;
+      addButton.removeAttribute('data-mh-variant-id');
+      addButton.textContent = variant ? 'Out of stock' : 'Unavailable combination';
+      if (stock) stock.textContent = 'Unavailable';
+      return;
+    }
+    addButton.disabled = false;
+    addButton.dataset.mhVariantId = variant.id;
+    addButton.textContent = 'Quick add';
+    if (price) price.textContent = money(variant.price);
+    if (original) original.textContent = money(variant.originalPrice);
+    if (discount) discount.textContent = variant.discount ? `${variant.discount}% OFF` : 'BEST VALUE';
+    if (stock) stock.textContent = `${variant.stock} in stock`;
+    if (image) image.src = variant.image;
+  }
+
   function handleClick(event) {
     const cartOpen = event.target.closest('#cartButton,.cart-link,[data-cart-open]');
     const close = event.target.closest('.close-drawer,#marketHubMiniCartBackdrop');
@@ -315,7 +419,13 @@
       event.stopPropagation();
       const item = productIndex.get(String(addButton.dataset.mhAddToCart));
       const quantitySource = addButton.dataset.mhQuantitySource && document.getElementById(addButton.dataset.mhQuantitySource);
-      if (item) addToCart(item, {quantity:Number(quantitySource?.value || 1)});
+      try {
+        if (item) addToCart(item, {quantity:Number(quantitySource?.value || 1),variantId:addButton.dataset.mhVariantId || ''});
+      } catch (error) {
+        const toast = document.getElementById('toast');
+        if (toast) { toast.textContent=error.message;toast.classList.add('show');setTimeout(()=>toast.classList.remove('show'),3000); }
+        else alert(error.message);
+      }
     }
     if (qty) changeQuantity(qty.dataset.cartKey, qty.dataset.cartQty);
     if (removeButton) remove(removeButton.dataset.cartRemove);
@@ -330,6 +440,7 @@
     ensureStoreActions();
     ensureCartUi();
     document.addEventListener('click', handleClick, true);
+    document.addEventListener('change', event => { if (event.target.matches('[data-mh-card-option]')) updateCardVariant(event.target); });
     document.addEventListener('keydown', event => { if (event.key === 'Escape') closeCart(); });
     window.addEventListener('storage', event => { if (event.key === CART_KEY) { cart = readCart(); renderCart(); } });
     window.addEventListener('storage', event => { if (event.key === WISHLIST_KEY) { wishes = new Set(readWishlist()); refreshWishlistUi(); } });
@@ -337,12 +448,12 @@
     refreshWishlistUi();
     syncWishlist();
     if (new URLSearchParams(location.search).get('cart') === 'open') openCart();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=41.1-mobile-navigation-auth').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=43-product-variants-1').catch(() => {});
   }
 
   window.MarketHubStorefront = {
     PAGE_SIZE, init, card, addToCart, openMiniCart:openCart, remove, changeQuantity, openCart, closeCart,
-    registerProducts, fetchProducts, renderGrid, createInfiniteGrid, toggleWishlist,
+    registerProducts, fetchProducts, renderGrid, createInfiniteGrid, toggleWishlist, normalizeProduct, resolveVariant, defaultVariant, optionLabel,
     getWishlist: () => [...wishes], isWished:key=>wishes.has(String(key)),
     getCart: () => [...cart], money, escapeHtml
   };

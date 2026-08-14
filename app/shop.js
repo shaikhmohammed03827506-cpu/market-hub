@@ -8,7 +8,7 @@
     loadPage:async(page,limit)=>{const data=await store.fetchProducts({page,limit,q:state.query,category:state.category,sort:state.sort});$('productCount').textContent=`${data.total||0} product${data.total===1?'':'s'}`;$('loadMore').hidden=data.hasMore===false;return data;}
   });
   async function reset(){syncUrl();await feed.reset();}
-  async function categories(){try{const items=await fetch('assets/catalogue/products.json',{cache:'force-cache'}).then(r=>r.json());const values=[...new Set(items.map(item=>item.category).filter(Boolean))].sort();$('categoryFilter').innerHTML='<option value="">All categories</option>'+values.map(value=>`<option>${store.escapeHtml(value)}</option>`).join('');$('categoryFilter').value=state.category;}catch{$('categoryFilter').innerHTML='<option value="">All categories</option>';}}
+  async function categories(){try{const response=await fetch('/api/categories',{cache:'no-store'}),data=await response.json();if(!response.ok)throw new Error(data.error);const values=data.categories||[];$('categoryFilter').innerHTML='<option value="">All categories</option>'+values.map(value=>`<option>${store.escapeHtml(value)}</option>`).join('');$('categoryFilter').value=state.category;}catch{$('categoryFilter').innerHTML='<option value="">All categories</option>';}}
   $('shopSearch').value=state.query;$('sortFilter').value=state.sort;
   $('shopSearch').addEventListener('input',event=>{state.query=event.target.value.trim();reset();});
   $('categoryFilter').addEventListener('change',event=>{state.category=event.target.value;reset();});
