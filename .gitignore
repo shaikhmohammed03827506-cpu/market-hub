@@ -1,4 +1,6 @@
-app/
 node_modules/
 npm-debug.log*
 pnpm-debug.log*
+.env
+app/.env
+app/.market-hub-*

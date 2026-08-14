@@ -7,7 +7,9 @@
     "node": ">=20 <23"
   },
   "scripts": {
-    "start": "node bootstrap.js"
+    "start": "node app/server.js",
+    "check": "node --check app/server.js && node --check app/script.js && node --check app/account.js",
+    "test:importer": "node --test app/tests/product-import.test.js app/tests/product-import-errors.test.js app/tests/product-import-publish.test.js app/tests/product-import-publish-db.test.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",

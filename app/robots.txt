@@ -1,0 +1,5 @@
+User-agent: *
+Allow: /
+Disallow: /admin.html
+Disallow: /admin-login.html
+Sitemap: https://market-hub-vavf.onrender.com/sitemap.xml

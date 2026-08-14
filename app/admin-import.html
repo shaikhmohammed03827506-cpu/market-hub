@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Product Import | MARKET HUB Admin</title>
+  <link rel="stylesheet" href="admin.css">
+  <link rel="stylesheet" href="admin-import.css?v=42-1-draft-publish-1">
+  <link rel="stylesheet" href="admin-import-publish.css?v=42-1-draft-publish-1">
+</head>
+<body>
+  <header class="import-top"><a href="admin.html"><img src="assets/market-hub-logo.png" alt="MARKET HUB"><b>ADMIN</b></a><div><a href="admin.html">← Admin dashboard</a><a href="index.html">View store</a></div></header>
+  <main class="import-shell">
+    <div class="import-title"><div><p>MARKET HUB ADMIN</p><h1>Product Import</h1><span>Amazon link import · Stock 99 · Draft first</span></div><span class="security-chip">🔒 Admin only</span></div>
+    <nav class="import-tabs"><button data-tab="single" class="active">Import URL</button><button data-tab="bulk">Bulk Import</button><button data-tab="drafts">Drafts</button><button data-tab="history">History</button><button data-tab="settings">Settings</button></nav>
+
+    <section id="singleTab" class="import-tab active">
+      <article class="import-card amazon-import-card">
+        <span class="amazon-chip">AMAZON LINK WORKFLOW</span>
+        <h2>Paste Product URL</h2>
+        <p>Paste a public Amazon.in product link. MARKET HUB imports only information exposed by the product page and never invents missing data.</p>
+        <form id="singleImportForm">
+          <input name="url" type="url" inputmode="url" placeholder="https://www.amazon.in/dp/XXXXXXXXXX" aria-label="Paste Product URL" required>
+          <div class="import-actions">
+            <button type="submit" data-intent="analyze">Analyze Product</button>
+            <button type="submit" data-intent="draft">Import Product</button>
+            <button type="submit" data-intent="draft" class="secondary">Import as Draft</button>
+          </div>
+        </form>
+        <p class="draft-rule">Every imported product is saved as Draft first. Publication always requires a separate manual review.</p>
+        <p id="singleStatus" class="status-line" aria-live="polite"></p>
+      </article>
+    </section>
+
+    <section id="bulkTab" class="import-tab"><article class="import-card"><h2>Bulk URL import</h2><p>Up to 20 URLs. Analysis runs with three bounded workers. Bulk results never auto-publish.</p><form id="bulkImportForm"><textarea name="urls" rows="9" placeholder="One HTTPS product URL per line" required></textarea><button>Analyze All</button></form><div id="bulkResults"></div><button id="saveAllDrafts" hidden>Save All as Draft</button></article></section>
+    <section id="draftsTab" class="import-tab"><article class="import-card"><div class="list-head"><h2>Import drafts</h2><input id="draftSearch" placeholder="Search drafts"></div><div id="draftList"></div></article></section>
+    <section id="historyTab" class="import-tab"><article class="import-card"><div class="list-head"><h2>Import history</h2><select id="historyStatus"><option value="">All statuses</option><option>ready</option><option>draft</option><option>published</option><option>failed</option><option>duplicate</option><option>skipped</option></select><input id="historySearch" placeholder="Search history"></div><div id="historyList"></div></article></section>
+    <section id="settingsTab" class="import-tab"><form id="importSettings" class="import-card settings-grid"><h2>Import settings</h2><label>Default markup %<input name="markupPercent" type="number" min="0" step=".01"></label><label>Fixed markup ₹<input name="fixedMarkupInr" type="number" min="0"></label><label>Minimum profit ₹<input name="minimumProfitInr" type="number" min="0"></label><label>Price rounding<select name="roundingRule"><option value="0">No rounding</option><option value="9">End in ₹9</option><option value="49">End in ₹49</option><option value="99">End in ₹99</option></select></label><label>Default stock<input name="defaultStock" type="number" min="1" value="99"></label><label>Maximum images<input name="maxImages" type="number" min="1" max="20"></label><label>Maximum media bytes<input name="maxMediaBytes" type="number" min="1" max="15000000"></label><label class="check"><input name="autoSku" type="checkbox"> Generate SKU when missing</label><label class="wide">Additional authorized source domains<textarea name="allowedDomains" rows="6" placeholder="supplier.example&#10;catalog.example"></textarea><small>Amazon.in and its image domains are authorized automatically.</small></label><label>Default status<input value="DRAFT" disabled></label><button>Save Settings</button></form></section>
+  </main>
+
+  <div id="importEditorBackdrop" hidden>
+    <form id="importEditor" class="import-editor">
+      <button type="button" data-editor-close aria-label="Close preview">×</button>
+      <div class="editor-media"><h2>Images</h2><p>Select images, choose the cover image, or change their order.</p><div id="editorImages"></div></div>
+      <div class="editor-fields">
+        <p id="duplicateWarning" class="duplicate-warning" hidden>PRODUCT MAY ALREADY EXIST</p>
+        <div class="review-heading"><div><h2>Product Preview</h2><span id="editorStatus"></span></div><span class="draft-badge" id="draftBadge">DRAFT</span></div>
+        <label>Title<input name="title" placeholder="Not Available"></label>
+        <label>Short Description<textarea name="shortDescription" rows="3" placeholder="Not Available"></textarea></label>
+        <label>Description<textarea name="description" rows="5" placeholder="Not Available"></textarea></label>
+        <div class="two">
+          <label>Brand<input name="brand" placeholder="Not Available"></label>
+          <label>Category suggestion<input name="category" list="categoryOptions" placeholder="Not Available"></label>
+          <label>SKU<input name="sku" placeholder="Generated automatically"></label>
+          <label>ASIN<input name="asin" readonly placeholder="Not Available"></label>
+          <label>Source price<input name="sourcePrice" type="number" disabled placeholder="Not Available"></label>
+          <label>Selling price<input name="price" type="number" min="1" placeholder="Not Available"></label>
+          <label>MRP<input name="mrp" type="number" min="0" placeholder="Not Available"></label>
+          <label>Discount %<input name="discount" type="number" min="0" max="100" placeholder="Not Available"></label>
+          <label>Stock<input name="stock" type="number" min="1" value="99"></label>
+          <label>Weight grams<input name="weightGrams" type="number" min="1" placeholder="Not Available"></label>
+        </div>
+        <label>Source URL<input name="sourceUrl" readonly></label>
+        <label>Variants JSON<textarea name="variants" rows="4" placeholder="Not Available"></textarea></label>
+        <label>Specifications / Attributes JSON<textarea name="specifications" rows="5" placeholder="Not Available"></textarea></label>
+        <label>Tags<input name="tags" placeholder="Not Available"></label>
+        <fieldset id="duplicateOptions" hidden><legend>Duplicate action</legend><label><input type="radio" name="duplicateAction" value="update"> Update Existing</label><label><input type="radio" name="duplicateAction" value="separate"> Create New</label><label><input type="radio" name="duplicateAction" value="skip"> Skip</label></fieldset>
+        <div id="publishSuccess" class="publish-success" hidden><strong>Product Published Successfully</strong><a id="viewPublishedProduct" href="#">View Product</a></div>
+        <div class="editor-actions"><button type="button" data-editor-close>Cancel</button><button type="button" id="saveDraft">Save Draft</button><button type="submit" id="publishProduct">Publish Product</button><button type="button" id="deleteDraft" class="danger">Delete Draft</button></div>
+        <small id="publishHelp">Save this product as Draft before Publish becomes available.</small>
+      </div>
+    </form>
+  </div>
+  <datalist id="categoryOptions"></datalist><div id="importToast" aria-live="polite"></div><script src="admin-import.js?v=42-1-draft-publish-1"></script>
+</body>
+</html>
