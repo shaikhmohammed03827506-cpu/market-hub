@@ -31,7 +31,15 @@ const config = {
   shiprocketPickupPincode: String(process.env.SHIPROCKET_PICKUP_PINCODE || '').replace(/\D/g, '').slice(0, 6),
   shiprocketCheckoutWebhookSecret: process.env.SHIPROCKET_CHECKOUT_WEBHOOK_SECRET || '',
   delhiveryToken: process.env.DELHIVERY_API_TOKEN || '',
-  delhiveryPickupLocation: process.env.DELHIVERY_PICKUP_LOCATION || '',
+  delhiveryBaseUrl: (process.env.DELHIVERY_API_BASE_URL || 'https://track.delhivery.com').replace(/\/$/, ''),
+  delhiveryClientName: (process.env.DELHIVERY_CLIENT_NAME || '').trim(),
+  delhiveryPickupLocation: (process.env.DELHIVERY_PICKUP_LOCATION || '').trim(),
+  delhiveryPickupPincode: String(process.env.DELHIVERY_PICKUP_PINCODE || '').replace(/\D/g, '').slice(0, 6),
+  delhiveryPickupCity: (process.env.DELHIVERY_PICKUP_CITY || '').trim(),
+  delhiveryPickupState: (process.env.DELHIVERY_PICKUP_STATE || '').trim(),
+  delhiverySellerName: (process.env.DELHIVERY_SELLER_NAME || 'MARKET HUB').trim(),
+  delhiverySellerGstin: String(process.env.DELHIVERY_SELLER_GSTIN || '').trim().toUpperCase(),
+  delhiveryHsnCode: String(process.env.DELHIVERY_HSN_CODE || '').replace(/\D/g, '').slice(0, 20),
   delhiveryCodEnabled: process.env.DELHIVERY_COD_ENABLED === 'true',
   adminEmail: (process.env.ADMIN_EMAIL || '').trim().toLowerCase(),
   adminPassword: process.env.ADMIN_PASSWORD || '',
@@ -203,6 +211,17 @@ async function shiprocketDeliveryEstimate(pincode, weightGrams = 500) {
   const value={serviceable:true,estimatedDeliveryDate:eta,estimatedDeliveryDays:Number.isFinite(days)?days:null,courier:String(best.courier_name||''),message:eta?'Estimated delivery based on Shiprocket serviceability.':'Delivery is serviceable; exact options are shown in checkout.'};
   deliveryEstimateCache.set(key,{value,expiresAt:Date.now()+300000}); return value;
 }
+
+function delhiveryConfig() {
+  return {
+    token:config.delhiveryToken,baseUrl:config.delhiveryBaseUrl,clientName:config.delhiveryClientName,
+    pickupLocation:config.delhiveryPickupLocation,pickupPincode:config.delhiveryPickupPincode,
+    pickupCity:config.delhiveryPickupCity,pickupState:config.delhiveryPickupState,
+    sellerName:config.delhiverySellerName,sellerGstin:config.delhiverySellerGstin,hsnCode:config.delhiveryHsnCode,codEnabled:config.delhiveryCodEnabled
+  };
+}
+
+const delhiveryReady = () => Boolean(config.delhiveryToken && config.delhiveryClientName && config.delhiveryPickupLocation);
 
 function checkoutPaymentDiagnostic(checkout) {
   const modes=[]; const scan=value=>{ if(Array.isArray(value)) return value.forEach(scan); if(value&&typeof value==='object') return Object.entries(value).forEach(([key,val])=>{if(/payment|method|mode/i.test(key)&&typeof val==='string')modes.push(val);scan(val);}); };
@@ -583,6 +602,45 @@ async function handleApi(req, res, url) {
     try { const { listAdminOrders } = require('./db'); return sendJson(res,200,{orders:await listAdminOrders()}); }
     catch (error) { console.error('Admin order query failed:', error.message); return sendJson(res,503,{error:'Orders are not ready yet.'}); }
   }
+  if (req.method==='GET' && url.pathname==='/api/admin/delhivery/shipments') {
+    if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
+    try { const {listDelhiveryShipments}=require('./db'); return sendJson(res,200,{ready:delhiveryReady(),shipments:await listDelhiveryShipments()}); }
+    catch (error) { console.error('Delhivery shipment list failed:',error.message); return sendJson(res,503,{error:'Shipping orders are not ready yet.'}); }
+  }
+  const delhiveryCreateRoute=url.pathname.match(/^\/api\/admin\/delhivery\/shipments\/([0-9a-f-]{36})$/i);
+  if (delhiveryCreateRoute && req.method==='POST') {
+    if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
+    if (!delhiveryReady()) return sendJson(res,503,{error:'Complete the private Delhivery token, client name and pickup location settings first.'});
+    try {
+      const body=JSON.parse(await readBody(req));
+      if(body.confirm !== true) return sendJson(res,400,{error:'Confirm this shipment before creating a live Delhivery waybill.'});
+      const db=require('./db'),delhivery=require('./delhivery'),order=await db.delhiveryOrder(delhiveryCreateRoute[1]);
+      if(['cancelled','returned','refunded'].includes(String(order.status))) throw new Error('This order cannot be shipped in its current status.');
+      const mode=String(order.paymentMethod).toLowerCase()==='cod'?'COD':'Pre-paid';
+      const serviceability=await delhivery.checkServiceability(delhiveryConfig(),order.pincode,mode);
+      if(!serviceability.serviceable) throw new Error(serviceability.message);
+      const reservation=await db.reserveDelhiveryShipment(order.id,config.delhiveryPickupLocation);
+      if(!reservation.reserved) return sendJson(res,200,{created:false,existing:true,awb:reservation.awb});
+      try {
+        const created=await delhivery.createShipment(delhiveryConfig(),order);
+        return sendJson(res,201,{created:true,...await db.completeDelhiveryShipment(order.id,created)});
+      } catch (error) { await db.failDelhiveryShipment(order.id,error); throw error; }
+    } catch(error) {
+      console.error('Delhivery shipment creation failed:',error.message);
+      return sendJson(res,400,{created:false,error:error.message || 'Delhivery could not create this shipment.'});
+    }
+  }
+  const delhiveryTrackRoute=url.pathname.match(/^\/api\/admin\/delhivery\/shipments\/([0-9a-f-]{36})\/track$/i);
+  if (delhiveryTrackRoute && req.method==='POST') {
+    if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
+    if (!delhiveryReady()) return sendJson(res,503,{error:'Delhivery is not connected yet.'});
+    try {
+      const db=require('./db'),delhivery=require('./delhivery'),order=await db.delhiveryOrder(delhiveryTrackRoute[1]);
+      if(!order.awb || order.shipmentProvider!=='delhivery') throw new Error('This order does not have a Delhivery waybill yet.');
+      const tracking=await delhivery.trackShipment(delhiveryConfig(),order.awb);
+      return sendJson(res,200,{tracking:await db.updateDelhiveryTracking(order.id,tracking)});
+    } catch(error) { return sendJson(res,400,{error:error.message || 'Delhivery tracking is unavailable.'}); }
+  }
   const adminOrderUpdateRoute=url.pathname.match(/^\/api\/admin\/orders\/([0-9a-f-]{36})\/status$/i);
   if(adminOrderUpdateRoute&&req.method==='PUT'){
     if(!validAdminSession(req))return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
@@ -732,12 +790,18 @@ async function handleApi(req, res, url) {
     return sendJson(res,200,{data:{total:collections.length,collections:collections.slice(from,from + limit),page,limit}});
   }
   if (req.method==='GET' && url.pathname==='/api/config/payment') return sendJson(res, 200, {ready:Boolean(config.razorpayKeyId && config.razorpayKeySecret),keyId:config.razorpayKeyId,logo:config.logo});
-  if (req.method==='GET' && url.pathname==='/api/config/shipping') return sendJson(res, 200, {provider:'Delhivery',ready:Boolean(config.delhiveryToken),pickupLocation:config.delhiveryPickupLocation,cashOnDelivery:config.delhiveryCodEnabled});
+  if (req.method==='GET' && url.pathname==='/api/config/shipping') return sendJson(res, 200, {provider:'Delhivery',ready:delhiveryReady(),pickupLocation:config.delhiveryPickupLocation,cashOnDelivery:config.delhiveryCodEnabled});
   if (req.method==='GET' && url.pathname==='/api/config/shiprocket-checkout') return sendJson(res, 200, {ready:Boolean(config.shiprocketCheckoutApiKey && config.shiprocketCheckoutSecret)});
   if (req.method==='GET' && url.pathname==='/api/config/shiprocket-shipping') return sendJson(res, 200, {ready:Boolean(config.shiprocketApiEmail && config.shiprocketApiPassword && config.shiprocketChannelId),channelId:config.shiprocketChannelId || null});
   if (req.method==='GET' && url.pathname==='/api/shipping/estimate') {
-    try { return sendJson(res,200,await shiprocketDeliveryEstimate(url.searchParams.get('pincode'),url.searchParams.get('weightGrams'))); }
-    catch (error) { console.warn('Shiprocket delivery estimate failed:',error.message); return sendJson(res,200,{serviceable:null,message:'Delivery estimate is temporarily unavailable. Shiprocket Checkout will confirm delivery options.'}); }
+    try {
+      if(delhiveryReady()) {
+        const {checkServiceability}=require('./delhivery');
+        return sendJson(res,200,await checkServiceability(delhiveryConfig(),url.searchParams.get('pincode'),url.searchParams.get('cod')==='true'?'COD':'Pre-paid'));
+      }
+      return sendJson(res,200,await shiprocketDeliveryEstimate(url.searchParams.get('pincode'),url.searchParams.get('weightGrams')));
+    }
+    catch (error) { console.warn('Delivery estimate failed:',error.message); return sendJson(res,200,{serviceable:null,message:'Delivery estimate is temporarily unavailable. Checkout will confirm delivery options.'}); }
   }
   if (req.method==='POST' && url.pathname==='/api/checkout/shiprocket/access-token') {
     try {

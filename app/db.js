@@ -387,6 +387,7 @@ async function ensureOrderSchema() {
       await client.query('alter table orders add column if not exists packing_video_note text');
       await client.query('alter table orders add column if not exists packing_video_uploaded_at timestamptz');
       await client.query('alter table shipments add column if not exists provider_order_id text');
+      await client.query('alter table shipments add column if not exists creation_error text');
       await client.query('create unique index if not exists shipments_provider_order_unique on shipments(provider, provider_order_id) where provider_order_id is not null');
       await client.query('commit');
     } catch (error) {
@@ -516,6 +517,111 @@ async function completeShiprocketShipment(orderId, payload) {
 async function releaseShiprocketShipment(orderId) {
   await ensureOrderSchema();
   await database().query("delete from shipments where order_id=$1 and provider='shiprocket' and tracking_status='creating'", [orderId]);
+}
+
+async function delhiveryOrder(orderId) {
+  await ensureOrderSchema();
+  await ensureVariantSchema();
+  const result = await database().query(
+    `select o.id,o.order_number,o.status,o.payment_status,o.payment_method,o.total_inr,o.created_at,
+            u.full_name as customer,u.phone as customer_phone,
+            a.label as address_label,a.full_name as address_name,a.phone as address_phone,a.line1,a.line2,a.city,a.state,a.pincode,
+            s.provider as shipment_provider,s.awb,s.tracking_status,
+            coalesce(sum(coalesce(pv.weight_kg,p.weight_kg,0.5)*1000*oi.quantity),500)::integer as weight_grams,
+            coalesce(max(p.length_cm),15)::numeric as length_cm,coalesce(max(p.breadth_cm),15)::numeric as breadth_cm,
+            coalesce(max(p.height_cm),10)::numeric as height_cm,
+            coalesce(jsonb_agg(jsonb_build_object('name',oi.product_name,'sku',coalesce(oi.variant_sku,oi.sku),
+              'quantity',oi.quantity,'price',oi.unit_price_inr)) filter(where oi.id is not null),'[]'::jsonb) items
+       from orders o join users u on u.id=o.user_id left join addresses a on a.id=o.address_id
+       left join order_items oi on oi.order_id=o.id left join products p on p.id=oi.product_id
+       left join product_variants pv on pv.id=oi.product_variant_id left join shipments s on s.order_id=o.id
+      where o.id=$1
+      group by o.id,u.full_name,u.phone,a.label,a.full_name,a.phone,a.line1,a.line2,a.city,a.state,a.pincode,
+               s.provider,s.awb,s.tracking_status`, [orderId]
+  );
+  if (!result.rowCount) throw new Error('This order no longer exists.');
+  const row = result.rows[0];
+  return {
+    id:row.id,orderNumber:Number(row.order_number),status:row.status,paymentStatus:row.payment_status,
+    paymentMethod:row.payment_method,totalInr:Number(row.total_inr),createdAt:row.created_at,
+    customer:row.address_name || row.customer,phone:row.address_phone || row.customer_phone,addressLabel:row.address_label,
+    line1:row.line1,line2:row.line2,city:row.city,state:row.state,pincode:row.pincode,
+    weightGrams:Number(row.weight_grams),lengthCm:Number(row.length_cm),breadthCm:Number(row.breadth_cm),heightCm:Number(row.height_cm),
+    shipmentProvider:row.shipment_provider,awb:row.awb,trackingStatus:row.tracking_status,items:row.items || []
+  };
+}
+
+async function listDelhiveryShipments() {
+  await ensureOrderSchema();
+  const result = await database().query(
+    `select o.id,o.order_number,o.status,o.payment_status,o.payment_method,o.total_inr,o.created_at,
+            coalesce(a.city,'') city,coalesce(a.pincode,'') pincode,coalesce(a.full_name,u.full_name) customer,
+            coalesce(sum(coalesce(pv.weight_kg,p.weight_kg,0.5)*1000*oi.quantity),500)::integer as weight_grams,
+            s.provider,s.awb,s.tracking_status,s.courier_name,s.tracking_url,s.creation_error
+       from orders o join users u on u.id=o.user_id left join addresses a on a.id=o.address_id
+       left join order_items oi on oi.order_id=o.id left join products p on p.id=oi.product_id
+       left join product_variants pv on pv.id=oi.product_variant_id left join shipments s on s.order_id=o.id
+      where o.status not in ('cancelled','returned','refunded')
+      group by o.id,a.city,a.pincode,a.full_name,u.full_name,s.provider,s.awb,s.tracking_status,s.courier_name,s.tracking_url,s.creation_error
+      order by o.created_at desc limit 100`
+  );
+  return result.rows.map(row => ({
+    id:row.id,orderNumber:Number(row.order_number),status:row.status,paymentStatus:row.payment_status,
+    paymentMethod:row.payment_method,totalInr:Number(row.total_inr),createdAt:row.created_at,customer:row.customer,
+    city:row.city,pincode:row.pincode,weightGrams:Number(row.weight_grams),provider:row.provider || null,
+    awb:row.awb || null,trackingStatus:row.tracking_status || null,courierName:row.courier_name || null,
+    trackingUrl:row.tracking_url || null,creationError:row.creation_error || null
+  }));
+}
+
+async function reserveDelhiveryShipment(orderId, pickupLocation) {
+  await ensureOrderSchema();
+  const client = await database().connect();
+  try {
+    await client.query('begin');
+    const existing = await client.query('select provider,awb,tracking_status from shipments where order_id=$1 for update',[orderId]);
+    if (existing.rowCount) {
+      const shipment=existing.rows[0];
+      if (shipment.provider !== 'delhivery') throw new Error(`This order is already assigned to ${shipment.provider}.`);
+      if (shipment.awb) { await client.query('commit'); return {reserved:false,existing:true,awb:shipment.awb}; }
+      if (shipment.tracking_status === 'creating') throw new Error('Delhivery shipment creation is already in progress.');
+      await client.query("update shipments set pickup_location=$2,tracking_status='creating',creation_error=null,updated_at=now() where order_id=$1",[orderId,pickupLocation]);
+    } else {
+      await client.query("insert into shipments(order_id,provider,pickup_location,tracking_status) values($1,'delhivery',$2,'creating')",[orderId,pickupLocation]);
+    }
+    await client.query('commit');
+    return {reserved:true};
+  } catch (error) { await client.query('rollback'); throw error; } finally { client.release(); }
+}
+
+async function completeDelhiveryShipment(orderId, shipment) {
+  await ensureOrderSchema();
+  const trackingUrl = `https://www.delhivery.com/track/package/${encodeURIComponent(shipment.awb)}`;
+  await database().query(
+    `update shipments set provider_order_id=$2,awb=$3,tracking_status=$4,courier_name='Delhivery',tracking_url=$5,
+            raw_tracking=$6::jsonb,creation_error=null,updated_at=now() where order_id=$1 and provider='delhivery'`,
+    [orderId,shipment.providerOrderId || null,shipment.awb,shipment.status || 'created',trackingUrl,JSON.stringify(shipment.raw || {})]
+  );
+  return {awb:shipment.awb,status:shipment.status || 'created',trackingUrl};
+}
+
+async function failDelhiveryShipment(orderId, error) {
+  await ensureOrderSchema();
+  await database().query(
+    "update shipments set tracking_status='creation_failed',creation_error=$2,updated_at=now() where order_id=$1 and provider='delhivery' and awb is null",
+    [orderId,String(error?.message || error || 'Shipment creation failed.').slice(0,500)]
+  );
+}
+
+async function updateDelhiveryTracking(orderId, tracking) {
+  await ensureOrderSchema();
+  await database().query(
+    `update shipments set tracking_status=$2,raw_tracking=$3::jsonb,updated_at=now(),
+       shipped_at=case when lower($2) like '%transit%' or lower($2) like '%dispatch%' then coalesce(shipped_at,now()) else shipped_at end,
+       delivered_at=case when lower($2) like '%delivered%' then coalesce(delivered_at,now()) else delivered_at end
+     where order_id=$1 and provider='delhivery'`, [orderId,tracking.status,JSON.stringify(tracking.raw || {})]
+  );
+  return {awb:tracking.awb,status:tracking.status};
 }
 
 async function listAdminOrders() {
@@ -1509,4 +1615,4 @@ async function importPdfCatalogue() {
   }
 }
 
-module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };
+module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };

@@ -304,6 +304,7 @@ alter table orders add column if not exists invoice_number text;
 alter table orders add column if not exists cancelled_at timestamptz;
 alter table shipments add column if not exists courier_name text;
 alter table shipments add column if not exists tracking_url text;
+alter table shipments add column if not exists creation_error text;
 alter table return_requests add column if not exists request_type text not null default 'return';
 alter table return_requests add column if not exists admin_note text;
 alter table return_requests add column if not exists updated_at timestamptz not null default now();
