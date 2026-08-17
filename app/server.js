@@ -270,18 +270,19 @@ function publicOrigin(request) {
   return `${protocol}://${host}`;
 }
 
-function shiprocketProductPayload(product, origin) {
+function shiprocketProductPayload(product, origin, options={}) {
+  const freeGift=options.freeGift===true;
   const absoluteImage=value=>!value?'':/^https?:\/\//i.test(value)?value:`${origin}${value.startsWith('/')?value:`/${value}`}`;
   const image = absoluteImage(product.image_url);
   const now = new Date().toISOString();
   const enabledVariants=Array.isArray(product.variants)?product.variants.filter(variant=>variant.is_enabled!==false):[];
   const variants=enabledVariants.length?enabledVariants.map(variant=>({
     id:Number(variant.checkout_variant_id),title:Object.values(variant.options||{}).join(' / ')||variant.sku,
-    price:Number(variant.price_inr).toFixed(2),compare_at_price:variant.compare_at_price_inr==null?undefined:Number(variant.compare_at_price_inr).toFixed(2),
+    price:Number(freeGift?0:variant.price_inr).toFixed(2),compare_at_price:variant.compare_at_price_inr==null?undefined:Number(variant.compare_at_price_inr).toFixed(2),
     sku:String(variant.sku),created_at:now,updated_at:now,taxable:true,quantity:Number(variant.stock_quantity||0),
     grams:Number(variant.weight_grams||500),image:{src:absoluteImage(variant.image_url||product.image_url)},
     weight:Number(variant.weight_grams||500)/1000,weight_unit:'kg',options:variant.options||{}
-  })): [{id:Number(product.checkout_product_id||product.id),title:'Default',price:Number(product.price_inr).toFixed(2),sku:String(product.sku),created_at:now,updated_at:now,taxable:true,quantity:Number(product.stock_quantity||0),grams:Number(product.weight_grams||500),image:{src:image},weight:Number(product.weight_grams||500)/1000,weight_unit:'kg'}];
+  })): [{id:Number(product.checkout_product_id||product.id),title:'Default',price:Number(freeGift?0:product.price_inr).toFixed(2),sku:String(product.sku),created_at:now,updated_at:now,taxable:!freeGift,quantity:Number(product.stock_quantity||0),grams:Number(product.weight_grams||500),image:{src:image},weight:Number(product.weight_grams||500)/1000,weight_unit:'kg'}];
   return {
     id: Number(product.checkout_product_id||product.id), title: String(product.name),
     body_html: `<p>${String(product.name).replace(/[<>&]/g, '')}</p>`, vendor: 'MARKET HUB',
@@ -320,7 +321,17 @@ function shiprocketPage(url) {
 }
 
 async function prepareShiprocketCart(request, cart) {
-  const db=require('./db'),lines=await db.checkoutCartItems(cart);
+  const db=require('./db'),purchasedLines=await db.checkoutCartItems(cart);
+  const subtotalInr=purchasedLines.reduce((total,line)=>total+Number(line.price||0)*Number(line.quantity||0),0);
+  const userId=validCustomerSession(request);
+  const hasPreviousOrder=userId?await db.customerHasPreviousOrder(userId):true;
+  const giftSkus=db.eligibleCheckoutGiftSkus({subtotalInr,hasPreviousOrder});
+  const giftLines=[];
+  for(const sku of giftSkus){
+    try{giftLines.push(...await db.checkoutCartItems([{sku,quantity:1}],undefined,{includeGiftOnly:true,freeGift:true}));}
+    catch(error){console.warn(`Checkout gift ${sku} was skipped:`,error.message);}
+  }
+  const lines=[...purchasedLines,...giftLines];
   const seen = new Set();
   const items = [];
   for (const line of lines) {
@@ -328,7 +339,7 @@ async function prepareShiprocketCart(request, cart) {
       // Fastrr Checkout validates variants against its catalogue before it
       // creates a checkout token, so send the product to its catalogue first.
       const product=await db.productById(line.productId);if(!product)throw new Error('A checkout product is no longer available.');
-      await shiprocketCheckout('/wh/v1/custom/product', shiprocketProductPayload(product, publicOrigin(request)));
+      await shiprocketCheckout('/wh/v1/custom/product', shiprocketProductPayload(product, publicOrigin(request),{freeGift:line.isGiftOnly}));
       seen.add(line.productId);
     }
     items.push({variant_id:String(line.checkoutVariantId),quantity:line.quantity});

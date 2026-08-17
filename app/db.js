@@ -414,6 +414,13 @@ function eligibleCheckoutGiftSkus({subtotalInr=0,hasPreviousOrder=false}={}) {
   if(Number(subtotalInr)>=999)gifts.push('MH-GIFT-TUMBLER');
   return gifts;
 }
+async function customerHasPreviousOrder(userId) {
+  if(!/^[0-9a-f-]{36}$/i.test(String(userId||'')))return false;
+  await ensureOrderSchema();
+  const result=await database().query(`select exists(select 1 from orders where user_id=$1
+    and status not in ('cancelled','returned','refunded')) has_previous`,[userId]);
+  return Boolean(result.rows[0]?.has_previous);
+}
 const statusForShiprocket = value => ({ SUCCESS: 'confirmed', FAILED: 'cancelled' }[String(value || '').toUpperCase()] || 'pending');
 const paymentForShiprocket = value => ({ SUCCESS: 'paid', FAILED: 'failed', PENDING: 'cod_pending' }[String(value || '').toUpperCase()] || 'pending');
 const newReferralCode = () => `MH${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
@@ -480,10 +487,11 @@ async function recordShiprocketOrder(order) {
       values($1,$2,$3,$4,$5,$6,$7,0,0,$8,$9,$10) returning id,order_number,status,inventory_reserved_at`,[userId,addressId,status,paymentStatus,paymentType==='CASH_ON_DELIVERY'?'cod':'shiprocket',moneyValue(order.subtotal_price),moneyValue(order.total_discount),moneyValue(order.cod_charges),moneyValue(order.total_amount_payable),externalId]);savedOrder=created.rows[0]}
     const itemCount=await client.query('select count(*)::integer total from order_items where order_id=$1',[savedOrder.id]);
     if(!Number(itemCount.rows[0].total)&&!['cancelled','returned','refunded'].includes(status)){
-      const purchasedLines=await checkoutCartItems((order.cart_data?.items||[]).map(item=>({variant_id:item.variant_id,quantity:item.quantity})),client);
+      const purchasedLines=await checkoutCartItems((order.cart_data?.items||[]).map(item=>({variant_id:item.variant_id,quantity:item.quantity})),client,{includeGiftOnly:true,freeGift:true});
       const previous=await client.query(`select exists(select 1 from orders where user_id=$1 and shiprocket_order_id is distinct from $2
         and status not in ('cancelled','returned','refunded')) has_previous`,[userId,externalId]);
-      const giftSkus=eligibleCheckoutGiftSkus({subtotalInr:Number(order.subtotal_price||0),hasPreviousOrder:Boolean(previous.rows[0]?.has_previous)});
+      const includedGiftSkus=new Set(purchasedLines.filter(line=>line.isGiftOnly).map(line=>String(line.variantSku).toUpperCase()));
+      const giftSkus=eligibleCheckoutGiftSkus({subtotalInr:Number(order.subtotal_price||0),hasPreviousOrder:Boolean(previous.rows[0]?.has_previous)}).filter(sku=>!includedGiftSkus.has(sku));
       const giftLines=[];
       for(const sku of giftSkus){
         try{giftLines.push(...await checkoutCartItems([{sku,quantity:1}],client,{includeGiftOnly:true,freeGift:true}));}
@@ -1638,4 +1646,4 @@ async function importPdfCatalogue() {
   }
 }
 
-module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,eligibleCheckoutGiftSkus,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };
+module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,eligibleCheckoutGiftSkus,customerHasPreviousOrder,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };
