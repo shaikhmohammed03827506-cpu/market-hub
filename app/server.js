@@ -293,7 +293,7 @@ function shiprocketProductPayload(product, origin) {
 }
 
 async function shiprocketCategoryFeed() {
-  const {listActiveProducts}=require('./db'),products=await listActiveProducts();
+  const {listActiveProducts}=require('./db'),products=await listActiveProducts({includeGiftOnly:true});
   const categories = [...new Set(products.map(product => String(product.category || 'General')))].sort();
   return categories.map((title, index) => ({
     id: index + 1,
@@ -306,7 +306,7 @@ async function shiprocketCategoryFeed() {
 }
 
 async function shiprocketProductFeed(origin, categoryName = '') {
-  const {listActiveProducts}=require('./db'),products=await listActiveProducts(),categories=await shiprocketCategoryFeed();
+  const {listActiveProducts}=require('./db'),products=await listActiveProducts({includeGiftOnly:true}),categories=await shiprocketCategoryFeed();
   const categoryIds = new Map(categories.map(category => [category.title, category.id]));
   return products
     .filter(product => !categoryName || String(product.category || 'General') === categoryName)

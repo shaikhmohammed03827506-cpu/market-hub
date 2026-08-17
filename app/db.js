@@ -88,9 +88,10 @@ const serializeProduct = row => {
   };
 };
 
-async function listActiveProducts() {
+async function listActiveProducts({ includeGiftOnly = false } = {}) {
   await ensureVariantSchema();
-  const result = await database().query(`${productFields} where p.is_active = true and p.status='published'${productGroup} order by p.created_at desc limit 5000`);
+  const giftFilter = includeGiftOnly ? '' : " and coalesce(p.specifications->>'gift_only','false') <> 'true'";
+  const result = await database().query(`${productFields} where p.is_active = true and p.status='published'${giftFilter}${productGroup} order by p.created_at desc limit 5000`);
   return result.rows.map(serializeProduct);
 }
 
@@ -259,7 +260,10 @@ async function saveProduct(input, productId = null) {
       'insert into categories (name, slug) values ($1, $2) on conflict (slug) do update set name = excluded.name, is_active = true returning id',
       [value.category, toSlug(value.category)]
     );
-    const specification = JSON.stringify(value.videoUrl ? { video_url: value.videoUrl } : {});
+    const specification = JSON.stringify({
+      ...(value.videoUrl ? { video_url: value.videoUrl } : {}),
+      ...(input.gift_only === true ? { gift_only: true } : {})
+    });
     let result;
     if (productId) {
       result = await client.query(
@@ -302,7 +306,7 @@ async function productById(productId) {
 
 async function productBySku(sku) {
   await ensureVariantSchema();
-  const result=await database().query(`${productFields} where lower(p.sku)=lower($1) and p.is_active=true and p.status='published'${productGroup}`,[String(sku||'')]);
+  const result=await database().query(`${productFields} where lower(p.sku)=lower($1) and p.is_active=true and p.status='published' and coalesce(p.specifications->>'gift_only','false') <> 'true'${productGroup}`,[String(sku||'')]);
   return result.rowCount?serializeProduct(result.rows[0]):null;
 }
 
@@ -323,7 +327,7 @@ async function checkoutCartItems(cart,queryable=database()) {
         (select url from product_images where product_id=p.id order by sort_order limit 1),'') image_url,
       exists(select 1 from product_variants existing where existing.product_id=p.id and existing.archived_at is null) has_variants
       from products p left join product_variants pv on pv.product_id=p.id and pv.archived_at is null and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and lower(pv.sku)=lower($2)) or ($3::text<>'' and pv.checkout_variant_id::text=$3))
-      where p.is_active=true and p.status='published' and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and (lower(pv.sku)=lower($2) or (lower(p.sku)=lower($2) and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null)))) or ($3::text<>'' and (pv.checkout_variant_id::text=$3 or (p.checkout_product_id::text=$3 and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null))))) limit 1`,[variantId,sku,checkoutId]);
+      where p.is_active=true and p.status='published' and coalesce(p.specifications->>'gift_only','false') <> 'true' and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and (lower(pv.sku)=lower($2) or (lower(p.sku)=lower($2) and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null)))) or ($3::text<>'' and (pv.checkout_variant_id::text=$3 or (p.checkout_product_id::text=$3 and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null))))) limit 1`,[variantId,sku,checkoutId]);
     if(!result?.rowCount)throw new Error('A cart item or selected variant is no longer available.');const row=result.rows[0],hasVariant=Boolean(row.variant_id);
     if(row.has_variants&&!hasVariant)throw new Error(`${row.name} requires a variant selection.`);if(hasVariant&&!row.is_enabled)throw new Error(`${row.name} variant is disabled.`);
     const stock=Number(hasVariant?row.variant_stock:row.product_stock);if(quantity>stock)throw new Error(`${row.name} does not have enough stock for the selected variant.`);
