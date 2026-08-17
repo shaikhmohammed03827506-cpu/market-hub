@@ -724,7 +724,9 @@ async function handleApi(req, res, url) {
       const saved=[];
       for (const gift of gifts) {
         const current=existing.find(product=>String(product.sku).toUpperCase()===gift.sku);
-        saved.push(await saveProduct(gift,current?.id||null));
+        const product=await saveProduct(gift,current?.id||null);
+        saved.push(product);
+        await shiprocketCheckout('/wh/v1/custom/product',shiprocketProductPayload(product,publicOrigin(req)));
       }
       return sendJson(res,200,{configured:true,products:saved.map(product=>({id:product.id,sku:product.sku,stock:product.stock_quantity}))});
     } catch (error) {
