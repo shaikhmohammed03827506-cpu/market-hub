@@ -821,7 +821,11 @@ async function handleApi(req, res, url) {
   }
   if (req.method==='POST' && url.pathname==='/api/webhooks/shiprocket-checkout/order') {
     try {
-      const order = JSON.parse(await readBody(req));
+      const raw = await readBody(req);
+      if (!shiprocketWebhookTrusted(req, raw)) {
+        return sendJson(res,401,{error:'Shiprocket Checkout webhook authentication failed.'});
+      }
+      const order = JSON.parse(raw);
       const { recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment } = require('./db');
       const saved = await recordShiprocketOrder(order);
       let shipmentCreated = false;

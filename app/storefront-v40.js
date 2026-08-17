@@ -279,7 +279,9 @@
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Checkout could not start.');
-      window.HeadlessCheckout.addToCart(new Event('click'), data.token);
+      window.HeadlessCheckout.addToCart(new Event('click'), data.token, {
+        fallbackUrl: `${location.origin}/shop.html`
+      });
     } catch (error) {
       const toast = document.getElementById('toast');
       if (toast) {

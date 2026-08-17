@@ -35,7 +35,7 @@ async function beginShiprocketCheckout(event){
     const response=await fetch('/api/checkout/shiprocket/access-token',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart:cart.map(item=>({sku:item.sku,qty:item.qty}))})});
     const checkout=await response.json().catch(()=>({}));if(!response.ok)throw new Error(checkout.error||'Shiprocket Checkout could not start. Your cart is still saved.');
     if(!checkout.token)throw new Error('Shiprocket Checkout did not return a secure checkout link. Your cart is still saved.');
-    window.HeadlessCheckout.addToCart(event,checkout.token);
+    window.HeadlessCheckout.addToCart(event,checkout.token,{fallbackUrl:`${location.origin}/shop.html`});
   }catch(error){toast(error.message||'Secure checkout could not start. Your cart is still saved.');}
   finally{checkoutButton.disabled=false;checkoutButton.textContent='Checkout securely →';}
 }
