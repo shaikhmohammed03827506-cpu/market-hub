@@ -704,6 +704,34 @@ async function handleApi(req, res, url) {
     catch (error) { console.error('Wallet refund failed:', error.message); return sendJson(res,400,{refunded:false,error:error.message || 'The wallet refund could not be approved.'}); }
   }
   const productRoute = url.pathname.match(/^\/api\/admin\/products\/([0-9a-f-]{36})$/i);
+  if (req.method==='POST' && url.pathname==='/api/admin/checkout-gifts/setup') {
+    if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
+    try {
+      const { listAdminProducts, saveProduct } = require('./db');
+      const existing = await listAdminProducts();
+      const gifts = [
+        {
+          name:'First Order Mystery Gift',category:'Checkout Gifts',sku:'MH-GIFT-MYSTERY',price:199,mrp:199,stock:9999,
+          weight_grams:250,description:'A complimentary mystery gift reserved for eligible first-time MARKET HUB customers.',
+          images:[`${publicOrigin(req)}/assets/mystery-gift.png`],gift_only:true
+        },
+        {
+          name:'Premium Free Tumbler',category:'Checkout Gifts',sku:'MH-GIFT-TUMBLER',price:499,mrp:499,stock:9999,
+          weight_grams:400,description:'A complimentary premium tumbler reserved for eligible MARKET HUB orders above ₹999.',
+          images:[`${publicOrigin(req)}/assets/free-tumbler.png`],gift_only:true
+        }
+      ];
+      const saved=[];
+      for (const gift of gifts) {
+        const current=existing.find(product=>String(product.sku).toUpperCase()===gift.sku);
+        saved.push(await saveProduct(gift,current?.id||null));
+      }
+      return sendJson(res,200,{configured:true,products:saved.map(product=>({id:product.id,sku:product.sku,stock:product.stock_quantity}))});
+    } catch (error) {
+      console.error('Checkout gift setup failed:',error.message);
+      return sendJson(res,400,{configured:false,error:error.message||'Checkout gifts could not be configured.'});
+    }
+  }
   if (req.method==='POST' && url.pathname==='/api/admin/products') {
     if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
     try { const { saveProduct } = require('./db'); return sendJson(res,201,{product:await saveProduct(JSON.parse(await readBody(req)))}); }
