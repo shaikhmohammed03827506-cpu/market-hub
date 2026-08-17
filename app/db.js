@@ -310,15 +310,18 @@ async function productBySku(sku) {
   return result.rowCount?serializeProduct(result.rows[0]):null;
 }
 
-async function checkoutCartItems(cart,queryable=database()) {
+async function checkoutCartItems(cart,queryable=database(),options={}) {
   await ensureVariantSchema();
   if(!Array.isArray(cart)||!cart.length||cart.length>50)throw new Error('Your cart is invalid.');
+  const includeGiftOnly=options.includeGiftOnly===true,freeGift=options.freeGift===true;
+  const giftFilter=includeGiftOnly?'':" and coalesce(p.specifications->>'gift_only','false') <> 'true'";
   const lines=[];
   for(const input of cart){const quantity=Number(input.qty??input.quantity),rawVariantId=String(input.variantId||input.variant_id||''),checkoutId=/^\d+$/.test(rawVariantId)?rawVariantId:String(input.checkoutVariantId||''),variantId=checkoutId?'':rawVariantId,sku=String(input.variantSku||input.sku||'').trim();
     if(!Number.isInteger(quantity)||quantity<1||quantity>99)throw new Error('A cart quantity is invalid.');
     let result;
     if(variantId||sku)result=await queryable.query(`select p.id product_id,p.sku product_sku,p.name,p.checkout_product_id,p.price_inr product_price,
       p.compare_at_price_inr product_mrp,p.stock_quantity product_stock,p.weight_kg product_weight,p.is_active,
+      coalesce(p.specifications->>'gift_only','false') gift_only,
       pv.id variant_id,pv.sku variant_sku,pv.price_inr variant_price,pv.compare_at_price_inr variant_mrp,
       pv.stock_quantity variant_stock,pv.weight_kg variant_weight,pv.checkout_variant_id,pv.is_enabled,
       coalesce((select jsonb_object_agg(po.name,pov.value order by po.position) from product_variant_values pvv
@@ -327,12 +330,13 @@ async function checkoutCartItems(cart,queryable=database()) {
         (select url from product_images where product_id=p.id order by sort_order limit 1),'') image_url,
       exists(select 1 from product_variants existing where existing.product_id=p.id and existing.archived_at is null) has_variants
       from products p left join product_variants pv on pv.product_id=p.id and pv.archived_at is null and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and lower(pv.sku)=lower($2)) or ($3::text<>'' and pv.checkout_variant_id::text=$3))
-      where p.is_active=true and p.status='published' and coalesce(p.specifications->>'gift_only','false') <> 'true' and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and (lower(pv.sku)=lower($2) or (lower(p.sku)=lower($2) and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null)))) or ($3::text<>'' and (pv.checkout_variant_id::text=$3 or (p.checkout_product_id::text=$3 and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null))))) limit 1`,[variantId,sku,checkoutId]);
+      where p.is_active=true and p.status='published'${giftFilter} and (($1::text<>'' and pv.id::text=$1) or ($2::text<>'' and (lower(pv.sku)=lower($2) or (lower(p.sku)=lower($2) and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null)))) or ($3::text<>'' and (pv.checkout_variant_id::text=$3 or (p.checkout_product_id::text=$3 and not exists(select 1 from product_variants x where x.product_id=p.id and x.archived_at is null))))) limit 1`,[variantId,sku,checkoutId]);
     if(!result?.rowCount)throw new Error('A cart item or selected variant is no longer available.');const row=result.rows[0],hasVariant=Boolean(row.variant_id);
     if(row.has_variants&&!hasVariant)throw new Error(`${row.name} requires a variant selection.`);if(hasVariant&&!row.is_enabled)throw new Error(`${row.name} variant is disabled.`);
     const stock=Number(hasVariant?row.variant_stock:row.product_stock);if(quantity>stock)throw new Error(`${row.name} does not have enough stock for the selected variant.`);
-    lines.push({productId:row.product_id,productSku:row.product_sku,name:row.name,variantId:row.variant_id||null,
-      variantSku:row.variant_sku||row.product_sku,selectedOptions:row.selected_options||{},price:Number(hasVariant?row.variant_price:row.product_price),
+    const isGiftOnly=String(row.gift_only).toLowerCase()==='true';
+    lines.push({productId:row.product_id,productSku:row.product_sku,name:row.name,variantId:row.variant_id||null,isGiftOnly,
+      variantSku:row.variant_sku||row.product_sku,selectedOptions:row.selected_options||{},price:freeGift&&isGiftOnly?0:Number(hasVariant?row.variant_price:row.product_price),
       mrp:(hasVariant?row.variant_mrp:row.product_mrp)==null?null:Number(hasVariant?row.variant_mrp:row.product_mrp),stock,
       weightGrams:Math.round(Number(hasVariant?row.variant_weight:row.product_weight)*1000),image:String(row.image_url||''),
       checkoutProductId:Number(row.checkout_product_id),checkoutVariantId:Number(hasVariant?row.checkout_variant_id:row.checkout_product_id),quantity});
@@ -404,6 +408,12 @@ async function ensureOrderSchema() {
 }
 
 const moneyValue = value => Math.max(0, Number(value || 0)).toFixed(2);
+function eligibleCheckoutGiftSkus({subtotalInr=0,hasPreviousOrder=false}={}) {
+  const gifts=[];
+  if(!hasPreviousOrder)gifts.push('MH-GIFT-MYSTERY');
+  if(Number(subtotalInr)>=999)gifts.push('MH-GIFT-TUMBLER');
+  return gifts;
+}
 const statusForShiprocket = value => ({ SUCCESS: 'confirmed', FAILED: 'cancelled' }[String(value || '').toUpperCase()] || 'pending');
 const paymentForShiprocket = value => ({ SUCCESS: 'paid', FAILED: 'failed', PENDING: 'cod_pending' }[String(value || '').toUpperCase()] || 'pending');
 const newReferralCode = () => `MH${crypto.randomBytes(5).toString('hex').toUpperCase()}`;
@@ -470,7 +480,16 @@ async function recordShiprocketOrder(order) {
       values($1,$2,$3,$4,$5,$6,$7,0,0,$8,$9,$10) returning id,order_number,status,inventory_reserved_at`,[userId,addressId,status,paymentStatus,paymentType==='CASH_ON_DELIVERY'?'cod':'shiprocket',moneyValue(order.subtotal_price),moneyValue(order.total_discount),moneyValue(order.cod_charges),moneyValue(order.total_amount_payable),externalId]);savedOrder=created.rows[0]}
     const itemCount=await client.query('select count(*)::integer total from order_items where order_id=$1',[savedOrder.id]);
     if(!Number(itemCount.rows[0].total)&&!['cancelled','returned','refunded'].includes(status)){
-      const lines=await checkoutCartItems((order.cart_data?.items||[]).map(item=>({variant_id:item.variant_id,quantity:item.quantity})),client);
+      const purchasedLines=await checkoutCartItems((order.cart_data?.items||[]).map(item=>({variant_id:item.variant_id,quantity:item.quantity})),client);
+      const previous=await client.query(`select exists(select 1 from orders where user_id=$1 and shiprocket_order_id is distinct from $2
+        and status not in ('cancelled','returned','refunded')) has_previous`,[userId,externalId]);
+      const giftSkus=eligibleCheckoutGiftSkus({subtotalInr:Number(order.subtotal_price||0),hasPreviousOrder:Boolean(previous.rows[0]?.has_previous)});
+      const giftLines=[];
+      for(const sku of giftSkus){
+        try{giftLines.push(...await checkoutCartItems([{sku,quantity:1}],client,{includeGiftOnly:true,freeGift:true}));}
+        catch(error){console.warn(`Checkout gift ${sku} was skipped:`,error.message);}
+      }
+      const lines=[...purchasedLines,...giftLines];
       if(!lines.length)throw new Error('The checkout order has no valid product variants.');
     for(const line of lines){let reserved;if(line.variantId){reserved=await client.query('update product_variants set stock_quantity=stock_quantity-$2,updated_at=now() where id=$1 and is_enabled=true and archived_at is null and stock_quantity>=$2 returning id',[line.variantId,line.quantity]);if(reserved.rowCount)await client.query('update products set stock_quantity=(select coalesce(sum(stock_quantity) filter(where is_enabled and archived_at is null),0) from product_variants where product_id=$1),updated_at=now() where id=$1',[line.productId])}
         else reserved=await client.query('update products set stock_quantity=stock_quantity-$2,updated_at=now() where id=$1 and is_active=true and stock_quantity>=$2 returning id',[line.productId,line.quantity]);
@@ -1619,4 +1638,4 @@ async function importPdfCatalogue() {
   }
 }
 
-module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };
+module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,eligibleCheckoutGiftSkus,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };

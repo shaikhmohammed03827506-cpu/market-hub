@@ -11,7 +11,8 @@
     "check": "node --check app/server.js && node --check app/script.js && node --check app/account.js",
     "test:importer": "node --test app/tests/product-import.test.js app/tests/product-import-errors.test.js app/tests/product-import-publish.test.js app/tests/product-import-publish-db.test.js",
     "test:session": "node --test app/tests/session-restart.test.js",
-    "test:delhivery": "node --test app/tests/delhivery.test.js"
+    "test:delhivery": "node --test app/tests/delhivery.test.js",
+    "test:checkout": "node --test app/tests/checkout-gifts.test.js"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",
