@@ -821,7 +821,10 @@ async function handleApi(req, res, url) {
   }
   if (req.method==='GET' && url.pathname==='/api/config/payment') return sendJson(res, 200, {ready:Boolean(config.razorpayKeyId && config.razorpayKeySecret),keyId:config.razorpayKeyId,logo:config.logo});
   if (req.method==='GET' && url.pathname==='/api/config/shipping') return sendJson(res, 200, {provider:'Delhivery',ready:delhiveryReady(),pickupLocation:config.delhiveryPickupLocation,cashOnDelivery:config.delhiveryCodEnabled});
-  if (req.method==='GET' && url.pathname==='/api/config/shiprocket-checkout') return sendJson(res, 200, {ready:Boolean(config.shiprocketCheckoutApiKey && config.shiprocketCheckoutSecret)});
+  if (req.method==='GET' && url.pathname==='/api/config/shiprocket-checkout') return sendJson(res, 200, {
+    ready:Boolean(config.shiprocketCheckoutApiKey && config.shiprocketCheckoutSecret),
+    webhookReady:Boolean(config.shiprocketCheckoutWebhookSecret)
+  });
   if (req.method==='GET' && url.pathname==='/api/config/shiprocket-shipping') return sendJson(res, 200, {ready:Boolean(config.shiprocketApiEmail && config.shiprocketApiPassword && config.shiprocketChannelId),channelId:config.shiprocketChannelId || null});
   if (req.method==='GET' && url.pathname==='/api/shipping/estimate') {
     try {
