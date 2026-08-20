@@ -279,7 +279,19 @@ function publicOrigin(request) {
 
 function shiprocketProductPayload(product, origin, options={}) {
   const freeGift=options.freeGift===true;
-  const absoluteImage=value=>!value?'':/^https?:\/\//i.test(value)?value:`${origin}${value.startsWith('/')?value:`/${value}`}`;
+  const absoluteImage=value=>{
+    if (!value) return '';
+    const image = String(value).trim();
+    if (/^https?:\/\//i.test(image)) {
+      try {
+        const parsed = new URL(image);
+        const legacyHosts = new Set(['market-hub-india.vercel.app','market-hub-vavf.onrender.com','market-hub-staging.vercel.app']);
+        if (legacyHosts.has(parsed.hostname)) return `${origin}${parsed.pathname}${parsed.search}`;
+      } catch {}
+      return image;
+    }
+    return `${origin}${image.startsWith('/')?image:`/${image}`}`;
+  };
   const image = absoluteImage(product.image_url);
   const now = new Date().toISOString();
   const enabledVariants=Array.isArray(product.variants)?product.variants.filter(variant=>variant.is_enabled!==false):[];
