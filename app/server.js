@@ -362,7 +362,12 @@ async function prepareShiprocketCart(request, cart) {
       // Fastrr Checkout validates variants against its catalogue before it
       // creates a checkout token, so send the product to its catalogue first.
       const product=await db.productById(line.productId);if(!product)throw new Error('A checkout product is no longer available.');
-      await shiprocketCheckout('/wh/v1/custom/product', shiprocketProductPayload(product, publicOrigin(request),{freeGift:line.isGiftOnly}));
+      const payload=shiprocketProductPayload(product,publicOrigin(request),{freeGift:line.isGiftOnly});
+      const synced=await shiprocketCheckout('/wh/v1/custom/product',payload);
+      console.info('Shiprocket Checkout catalog item synced:',{
+        productId:payload.id,variantIds:payload.variants.map(variant=>variant.id),
+        responseOk:synced?.ok!==false,resultKeys:Object.keys(synced?.result||{})
+      });
       seen.add(line.productId);
     }
     items.push({variant_id:String(line.checkoutVariantId),quantity:line.quantity});
