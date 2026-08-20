@@ -51,7 +51,7 @@ const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-d
 const productVariantsV43PatchFile = path.join(__dirname, 'market-hub-v43-complete-product-variants.zip');
 const productVariantsV43PatchMarker = path.join(appDirectory, '.market-hub-v43-complete-product-variants-1');
 const latestAppV43PatchFile = path.join(__dirname, 'market-hub-v43-latest-app-download.zip');
-const latestAppV43PatchMarker = path.join(appDirectory, '.market-hub-v43-latest-app-download');
+const latestAppV43PatchMarker = path.join(appDirectory, '.market-hub-v43-latest-app-download-1');
 
 function applyCheckoutPatch() {
   if (fs.existsSync(checkoutPatchMarker)) return;
