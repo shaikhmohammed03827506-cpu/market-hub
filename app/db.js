@@ -103,6 +103,54 @@ async function listAdminProducts() {
 
 const toSlug = value => String(value).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
+const serializeCategory = row => ({
+  id: row.id,
+  name: row.name,
+  slug: row.slug,
+  parentId: row.parent_id || null,
+  parentName: row.parent_name || '',
+  imageUrl: row.image_url || '',
+  isActive: row.is_active !== false,
+  sortOrder: Number(row.sort_order || 0),
+  productCount: Number(row.product_count || 0)
+});
+
+async function listAdminCategories() {
+  const result = await database().query(`
+    select c.id,c.name,c.slug,c.parent_id,c.image_url,c.is_active,c.sort_order,
+      parent.name parent_name,count(p.id)::integer product_count
+    from categories c
+    left join categories parent on parent.id=c.parent_id
+    left join products p on p.category_id=c.id and p.is_active=true
+    group by c.id,parent.name
+    order by c.sort_order,c.name
+  `);
+  return result.rows.map(serializeCategory);
+}
+
+async function listActiveCategoryNames() {
+  const result = await database().query('select name from categories where is_active=true order by sort_order,name');
+  return result.rows.map(row => String(row.name || '').trim()).filter(Boolean);
+}
+
+async function saveCategory(input) {
+  const name=String(input?.name||'').trim().replace(/\s+/g,' '),slug=toSlug(name);
+  const parentId=/^[0-9a-f-]{36}$/i.test(String(input?.parentId||''))?String(input.parentId):null;
+  const imageUrl=String(input?.imageUrl||'').trim();
+  if(name.length<2||name.length>80||!slug)throw new Error('Enter a category name between 2 and 80 characters.');
+  if(imageUrl&&!isWebUrl(imageUrl))throw new Error('The category image link must start with https://.');
+  if(parentId){const parent=await database().query('select id from categories where id=$1 and is_active=true',[parentId]);if(!parent.rowCount)throw new Error('Choose an active parent category.');}
+  const result=await database().query(`
+    insert into categories(name,slug,parent_id,image_url,is_active)
+    values($1,$2,$3,$4,true)
+    on conflict(slug) do update set name=excluded.name,parent_id=excluded.parent_id,
+      image_url=coalesce(excluded.image_url,categories.image_url),is_active=true
+    returning id
+  `,[name,slug,parentId,imageUrl||null]);
+  const categories=await listAdminCategories();
+  return categories.find(category=>category.id===result.rows[0].id);
+}
+
 const isWebUrl = value => /^https?:\/\/\S+$/i.test(String(value || '').trim());
 
 async function ensureVariantSchema() {
@@ -1646,4 +1694,4 @@ async function importPdfCatalogue() {
   }
 }
 
-module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts,productById,productBySku,checkoutCartItems,eligibleCheckoutGiftSkus,customerHasPreviousOrder,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };
+module.exports = { database, databaseHealth, listActiveProducts, listAdminProducts, listAdminCategories, listActiveCategoryNames, saveCategory,productById,productBySku,checkoutCartItems,eligibleCheckoutGiftSkus,customerHasPreviousOrder,shiprocketOrderItems,ensureVariantSchema,normalizeVariantModel,syncProductVariants, listAdminOrders, listAdminRefunds, saveProduct, deactivateProduct, importPdfCatalogue, recordShiprocketOrder, reserveShiprocketShipment, completeShiprocketShipment, releaseShiprocketShipment, delhiveryOrder, listDelhiveryShipments, reserveDelhiveryShipment, completeDelhiveryShipment, failDelhiveryShipment, updateDelhiveryTracking, refundOrderToWallet, registerCustomer, authenticateCustomer, customerAccount, updateCustomerProfile, customerAddresses, saveCustomerAddress, deleteCustomerAddress, customerOrders, customerReturnItems, requestCustomerReturn, customerReviewItems, submitCustomerReview, listAdminReviews, approveReview, deleteReview, publicReviewsBySku, reviewSummary, voteReviewHelpful, customerWishlist, saveCustomerWishlist, savePackingVideo, loyaltyRules, loyaltyQuote, setLoyaltyRules, coinSummary, adminCoinAdjustment, listAdminLoyalty, recordShiprocketEvent, ensureCustomerExperienceSchema, ensureEngagementSchema, ensureAccountV41Schema, customerDashboard, customerOrdersV41, customerOrderDetails, cancelCustomerOrder, buyAgainItems, customerNotifications, markCustomerNotifications, customerCoupons, changeCustomerPassword, adminUpdateOrder, listAdminReturns, adminUpdateReturn, guestOrderTracking, ensureProductImportSchema, productImportSettings, saveProductImportSettings, auditProductImport, detectProductImportDuplicate, createProductImportItem, createProductImportJob, completeProductImportJob, failProductImportItem, uniqueImportSku, productImportItem, validateProductImportCategory, saveProductImportItem, publishProductImportItem, deleteProductImportDraft, listProductImports, listProductImportHistory };

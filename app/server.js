@@ -585,6 +585,16 @@ async function handleApi(req, res, url) {
     try { const { listAdminProducts } = require('./db'); return sendJson(res,200,{products:await listAdminProducts()}); }
     catch (error) { console.error('Admin product query failed:', error.message); return sendJson(res,503,{error:'The product database is not ready yet.'}); }
   }
+  if (req.method==='GET' && url.pathname==='/api/admin/categories') {
+    if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
+    try { const {listAdminCategories}=require('./db');return sendJson(res,200,{categories:await listAdminCategories()}); }
+    catch(error){console.error('Admin category query failed:',error.message);return sendJson(res,503,{error:'Categories are not ready yet.'});}
+  }
+  if (req.method==='POST' && url.pathname==='/api/admin/categories') {
+    if (!validAdminSession(req)) return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
+    try { const {saveCategory}=require('./db');return sendJson(res,201,{category:await saveCategory(JSON.parse(await readBody(req)))}); }
+    catch(error){console.error('Category create failed:',error.message);return sendJson(res,400,{error:error.message||'The category could not be saved.'});}
+  }
   if(url.pathname.startsWith('/api/admin/product-import/')){
     if(!validAdminSession(req))return sendJson(res,401,{error:'Please sign in to the admin panel first.'});
     if(!allowProductImportRequest(req))return sendJson(res,429,{ok:false,error:{code:'RATE_LIMITED',message:'Too many importer requests. Wait a minute and try again.'}});
@@ -804,7 +814,7 @@ async function handleApi(req, res, url) {
     catch (error) { console.error('Product query failed:', error.message); return sendJson(res,503,{error:'Product catalogue database is not ready.'}); }
   }
   if(req.method==='GET'&&url.pathname==='/api/categories'){
-    try{const {listActiveProducts}=require('./db'),products=await listActiveProducts(),categories=[...new Set(products.map(product=>String(product.category||'').trim()).filter(Boolean))].sort((a,b)=>a.localeCompare(b));return sendJson(res,200,{categories});}
+    try{const {listActiveCategoryNames}=require('./db');return sendJson(res,200,{categories:await listActiveCategoryNames()});}
     catch(error){console.error('Category query failed:',error.message);return sendJson(res,503,{error:'Product categories are not ready.'});}
   }
   const publicProductRoute=url.pathname.match(/^\/api\/products\/([^/]+)$/);
