@@ -149,7 +149,11 @@ async function shiprocketCheckout(endpoint, body) {
   }
   let data;
   try { data = await response.json(); } catch { data = {}; }
-  if (!response.ok || data.ok === false) throw new Error(shiprocketCheckoutError(data, response.status));
+  if (!response.ok || data.ok === false) {
+    const message=shiprocketCheckoutError(data,response.status);
+    console.error('Shiprocket Checkout API rejected request:',{endpoint,status:response.status,message});
+    throw new Error(message);
+  }
   return data;
 }
 
