@@ -16,6 +16,7 @@ if (fs.existsSync(envPath)) {
 
 const config = {
   port: Number(process.env.PORT || 4173),
+  publicOrigin: String(process.env.PUBLIC_ORIGIN || (process.env.VERCEL === '1' ? 'https://market-hub-shop.vercel.app' : '')).trim().replace(/\/+$/, ''),
   databaseUrl: process.env.DATABASE_URL || '',
   razorpayKeyId: process.env.RAZORPAY_KEY_ID || '',
   razorpayKeySecret: process.env.RAZORPAY_KEY_SECRET || '',
@@ -264,7 +265,13 @@ function cataloguePrices() {
 }
 
 function publicOrigin(request) {
-  const host = String(request.headers.host || '').trim();
+  if (config.publicOrigin) {
+    if (!/^https?:\/\/[a-z0-9.-]+(?::\d+)?$/i.test(config.publicOrigin)) {
+      throw new Error('PUBLIC_ORIGIN must be a complete website origin without a path.');
+    }
+    return config.publicOrigin;
+  }
+  const host = String(request.headers['x-forwarded-host'] || request.headers.host || '').split(',')[0].trim();
   if (!/^[a-z0-9.-]+(?::\d+)?$/i.test(host)) throw new Error('The public website address is not available.');
   const protocol = request.headers['x-forwarded-proto'] === 'http' ? 'http' : 'https';
   return `${protocol}://${host}`;

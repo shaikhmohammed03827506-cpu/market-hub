@@ -2,6 +2,8 @@
 
 Production store URL: `https://market-hub-shop.vercel.app`
 
+Set `PUBLIC_ORIGIN=https://market-hub-shop.vercel.app` in Vercel for Production and Preview so checkout redirects and catalogue assets always use the Shop address.
+
 1. In Shiprocket Checkout, create or open a **Custom Platform** store for `https://market-hub-shop.vercel.app`.
 2. Configure the public catalogue endpoints if Shiprocket asks for them:
    - Products: `https://market-hub-shop.vercel.app/api/shiprocket/catalog/products`
