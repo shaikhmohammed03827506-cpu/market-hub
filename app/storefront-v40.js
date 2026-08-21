@@ -463,7 +463,7 @@
     refreshWishlistUi();
     syncWishlist();
     if (new URLSearchParams(location.search).get('cart') === 'open') openCart();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=43-product-variants-1').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=44-checkout-offers-1').catch(() => {});
   }
 
   window.MarketHubStorefront = {
