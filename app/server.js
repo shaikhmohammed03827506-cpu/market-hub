@@ -24,6 +24,7 @@ const config = {
   shiprocketCheckoutApiKey: process.env.SHIPROCKET_CHECKOUT_API_KEY || '',
   shiprocketCheckoutSecret: process.env.SHIPROCKET_CHECKOUT_SECRET_KEY || '',
   shiprocketCheckoutBaseUrl: (process.env.SHIPROCKET_CHECKOUT_BASE_URL || 'https://checkout-api.shiprocket.com').replace(/\/$/, ''),
+  shiprocketCheckoutRegisteredOrigin: String(process.env.SHIPROCKET_CHECKOUT_REGISTERED_ORIGIN || 'https://market-hub-india.vercel.app').trim().replace(/\/+$/, ''),
   shiprocketApiEmail: (process.env.SHIPROCKET_API_EMAIL || '').trim().toLowerCase(),
   shiprocketApiPassword: process.env.SHIPROCKET_API_PASSWORD || '',
   shiprocketChannelId: Number(process.env.SHIPROCKET_CHANNEL_ID || 0),
@@ -890,7 +891,7 @@ async function handleApi(req, res, url) {
       const { cart=[] } = JSON.parse(await readBody(req));
       const items = await prepareShiprocketCart(req, cart);
       const checkout = await shiprocketCheckout('/api/v1/access-token/checkout', {
-        cart_data: { items }, redirect_url: `${publicOrigin(req)}/checkout-success.html`, timestamp: new Date().toISOString()
+        cart_data: { items }, redirect_url: `${config.shiprocketCheckoutRegisteredOrigin}/checkout-success.html`, timestamp: new Date().toISOString()
       });
       checkoutPaymentDiagnostic(checkout);
       const token = checkout.result?.token;
