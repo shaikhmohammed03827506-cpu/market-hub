@@ -152,8 +152,9 @@
           <div class="drawer-head"><h2>Your cart</h2><button class="close-drawer" type="button" aria-label="Close cart">×</button></div>
           <div id="cartItems" class="cart-items"></div>
           <div class="cart-footer">
+            <section id="cartGiftProgress" class="mh-cart-gift-progress" aria-live="polite"></section>
             <div><span>Subtotal</span><b id="cartSubtotal">₹0</b></div>
-            <small>Shipping, discounts and payment options are confirmed in secure checkout.</small>
+            <small id="cartPaymentPolicy">COD includes a ₹15 handling fee. Shipping and final payment options are confirmed in secure checkout.</small>
             <button id="checkoutButton" class="button button-primary full" type="button">Checkout securely →</button>
           </div>
         </aside><div class="drawer-backdrop" id="marketHubMiniCartBackdrop"></div>
@@ -175,6 +176,18 @@
     document.querySelectorAll('#cartCount,.cart-count,[data-cart-count]').forEach(node => { node.textContent = count; });
     const subtotalNode = document.getElementById('cartSubtotal');
     if (subtotalNode) subtotalNode.textContent = money(subtotal);
+    const giftProgress = document.getElementById('cartGiftProgress');
+    if (giftProgress) {
+      const unlocked = subtotal >= 999 ? 3 : subtotal >= 799 ? 2 : subtotal >= 399 ? 1 : 0;
+      const next = subtotal < 399 ? 399 : subtotal < 799 ? 799 : subtotal < 999 ? 999 : null;
+      giftProgress.innerHTML = `<b>🎁 ${unlocked ? `${unlocked} mystery gift${unlocked === 1 ? '' : 's'} unlocked` : 'Unlock your first mystery gift'}</b>
+        <span>${next ? `Add ${money(next - subtotal)} more for the ₹${next} gift milestone.` : 'Top milestone unlocked — your order also gets a free tumbler!'}</span>
+        <small>First orders receive one additional free mystery gift.</small>`;
+    }
+    const paymentPolicy = document.getElementById('cartPaymentPolicy');
+    if (paymentPolicy) paymentPolicy.textContent = subtotal > 1499
+      ? `Partial COD available: pay 20% (${money(subtotal * .2)}) now and the balance on delivery. ₹15 COD handling fee applies.`
+      : 'Cash on Delivery is available up to ₹1,499. A ₹15 COD handling fee applies.';
     const list = document.getElementById('cartItems');
     if (!list) return;
     list.innerHTML = cart.length ? cart.map(item => {

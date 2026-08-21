@@ -120,6 +120,11 @@
         <div class="detail-price" id="detailPrice">${store.money(displayPrice)}${displayMrp > displayPrice ? `<del>${store.money(displayMrp)}</del>` : ''}</div>
         <span class="stock" id="productStock">In stock · ${displayStock} units ready</span>
         <p class="detail-note">${store.escapeHtml(currentProduct.description || 'Quality-checked MARKET HUB product.')}</p>
+        <section class="mh-gift-offer" aria-label="Free gift offers">
+          <div><strong>🎁 Mystery gifts with your order</strong><span>₹399+ · 1 gift</span><span>₹799+ · 2 gifts</span><span>₹999+ · 3 gifts + free tumbler</span></div>
+          <small>First orders receive one additional mystery gift. Gifts are added automatically in secure checkout while stock lasts.</small>
+        </section>
+        <p class="mh-payment-offer"><strong>Flexible payment:</strong> COD up to ₹1,499. Above ₹1,499, pay 20% now and the balance on delivery. ₹15 COD handling fee applies.</p>
         ${variantControls(currentProduct)}
         <div class="qty-row"><label>Qty <input id="quantity" type="number" min="1" max="${displayStock || 1}" value="1"></label>
           <button class="primary" id="addCart" type="button" data-mh-add-to-cart="${store.escapeHtml(currentProduct.sku)}" data-mh-quantity-source="quantity"${currentProduct.hasVariants || displayStock < 1 ? ' disabled' : ''}>Add to cart</button><button class="secondary" id="shareProduct" type="button">Share</button>

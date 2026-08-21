@@ -459,6 +459,9 @@ const moneyValue = value => Math.max(0, Number(value || 0)).toFixed(2);
 function eligibleCheckoutGiftSkus({subtotalInr=0,hasPreviousOrder=false}={}) {
   const gifts=[];
   if(!hasPreviousOrder)gifts.push('MH-GIFT-MYSTERY');
+  if(Number(subtotalInr)>=399)gifts.push('MH-GIFT-MYSTERY');
+  if(Number(subtotalInr)>=799)gifts.push('MH-GIFT-MYSTERY');
+  if(Number(subtotalInr)>=999)gifts.push('MH-GIFT-MYSTERY');
   if(Number(subtotalInr)>=999)gifts.push('MH-GIFT-TUMBLER');
   return gifts;
 }

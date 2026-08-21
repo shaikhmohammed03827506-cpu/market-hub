@@ -356,7 +356,7 @@ async function prepareShiprocketCart(request, cart) {
   }
   const lines=[...purchasedLines,...giftLines];
   const seen = new Set();
-  const items = [];
+  const itemQuantities = new Map();
   for (const line of lines) {
     if (!seen.has(line.productId)) {
       // Fastrr Checkout validates variants against its catalogue before it
@@ -370,9 +370,10 @@ async function prepareShiprocketCart(request, cart) {
       });
       seen.add(line.productId);
     }
-    items.push({variant_id:String(line.checkoutVariantId),quantity:line.quantity});
+    const variantId=String(line.checkoutVariantId);
+    itemQuantities.set(variantId,(itemQuantities.get(variantId)||0)+Number(line.quantity||0));
   }
-  return items;
+  return [...itemQuantities].map(([variant_id,quantity])=>({variant_id,quantity}));
 }
 
 const cleanShippingText = value => String(value || '').trim().replace(/[<>]/g, '').slice(0, 200);
