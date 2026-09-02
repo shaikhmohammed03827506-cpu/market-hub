@@ -92,6 +92,8 @@
   let wishes = new Set(readWishlist());
   let productIndex = new Map();
   let initialized = false;
+  let giftPreviewKey = '';
+  let giftPreview = null;
 
   function readWishlist() {
     try {
@@ -162,6 +164,35 @@
     }
   }
 
+  function checkoutPayload() {
+    return cart.map(item => ({
+      sku:item.variantSku || item.parentSku || item.sku,
+      variantSku:item.variantSku || undefined,
+      variantId:item.variantId || undefined,
+      qty:Math.max(1,Number(item.qty||1))
+    }));
+  }
+
+  function fallbackGifts(subtotal) {
+    const gifts=[];
+    if (subtotal>=399) gifts.push({sku:'MH-GIFT-MYSTERY',name:'Free Mystery Gift',quantity:1,image:'assets/mystery-gift.png',kind:'mystery'});
+    if (subtotal>=799) gifts[0] && (gifts[0].quantity=2);
+    if (subtotal>=999) { if(gifts[0])gifts[0].quantity=3;gifts.push({sku:'MH-GIFT-TUMBLER',name:'Free Premium Tumbler',quantity:1,image:'assets/free-tumbler.png',kind:'tumbler'}); }
+    return gifts;
+  }
+
+  function refreshGiftPreview() {
+    const payload=checkoutPayload();
+    const key=JSON.stringify(payload);
+    if (key===giftPreviewKey) return;
+    giftPreviewKey=key;giftPreview=null;
+    if (!payload.length) return;
+    fetch('/api/checkout/gift-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart:payload})})
+      .then(response=>response.ok?response.json():Promise.reject(new Error('Gift preview unavailable')))
+      .then(data=>{if(giftPreviewKey===key){giftPreview=data;renderCart();}})
+      .catch(()=>{if(giftPreviewKey===key){giftPreview={gifts:[]};renderCart();}});
+  }
+
   function ensureStoreActions() {
     if (!document.querySelector('#wishlistButton,[data-wishlist-open]')) {
       const nav=document.querySelector('.topbar nav,.actions');
@@ -173,16 +204,19 @@
     ensureCartUi();
     const count = cart.reduce((sum, item) => sum + Math.max(1, Number(item.qty || 1)), 0);
     const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * Math.max(1, Number(item.qty || 1)), 0);
+    refreshGiftPreview();
+    const gifts=Array.isArray(giftPreview?.gifts) ? giftPreview.gifts : fallbackGifts(subtotal);
     document.querySelectorAll('#cartCount,.cart-count,[data-cart-count]').forEach(node => { node.textContent = count; });
     const subtotalNode = document.getElementById('cartSubtotal');
     if (subtotalNode) subtotalNode.textContent = money(subtotal);
     const giftProgress = document.getElementById('cartGiftProgress');
     if (giftProgress) {
-      const unlocked = subtotal >= 999 ? 3 : subtotal >= 799 ? 2 : subtotal >= 399 ? 1 : 0;
+      const mysteryQuantity=gifts.filter(gift=>gift.kind==='mystery').reduce((sum,gift)=>sum+Number(gift.quantity||0),0);
+      const tumblerUnlocked=gifts.some(gift=>gift.kind==='tumbler');
       const next = subtotal < 399 ? 399 : subtotal < 799 ? 799 : subtotal < 999 ? 999 : null;
-      giftProgress.innerHTML = `<b>🎁 ${unlocked ? `${unlocked} mystery gift${unlocked === 1 ? '' : 's'} unlocked` : 'Unlock your first mystery gift'}</b>
-        <span>${next ? `Add ${money(next - subtotal)} more for the ₹${next} gift milestone.` : 'Top milestone unlocked — your order also gets a free tumbler!'}</span>
-        <small>First orders receive one additional free mystery gift.</small>`;
+      giftProgress.innerHTML = `<b>🎁 ${gifts.length ? `${mysteryQuantity ? `${mysteryQuantity} mystery gift${mysteryQuantity===1?'':'s'}` : ''}${mysteryQuantity&&tumblerUnlocked?' + ':''}${tumblerUnlocked?'free tumbler':''} added automatically` : 'Unlock your first mystery gift'}</b>
+        <span>${next ? `Add ${money(next - subtotal)} more for the ₹${next} gift milestone.` : 'Top milestone unlocked — your gifts are ready!'}</span>
+        <small>${giftPreview?.hasPreviousOrder===false?'Your first-order bonus gift is included.':'Free gifts are added to the secure Shiprocket checkout automatically.'}</small>`;
     }
     const paymentPolicy = document.getElementById('cartPaymentPolicy');
     if (paymentPolicy) paymentPolicy.textContent = subtotal > 1499
@@ -190,7 +224,7 @@
       : 'Cash on Delivery is available up to ₹1,499. A ₹15 COD handling fee applies.';
     const list = document.getElementById('cartItems');
     if (!list) return;
-    list.innerHTML = cart.length ? cart.map(item => {
+    const paidLines=cart.map(item => {
       const key = escapeHtml(cartLineKey(item));
       const qty = Math.max(1, Number(item.qty || 1));
       return `<article class="cart-row mh-cart-item">
@@ -204,7 +238,13 @@
         </div>
         <button type="button" data-cart-remove="${key}">Remove</button>
       </article>`;
-    }).join('') : '<p class="empty-state">Your cart is waiting for something good.</p>';
+    }).join('');
+    const giftLines=gifts.map(gift=>`<article class="cart-row mh-cart-item mh-cart-gift-item">
+      <img loading="lazy" src="${escapeHtml(gift.image || (gift.kind==='tumbler'?'assets/free-tumbler.png':'assets/mystery-gift.png'))}" alt="${escapeHtml(gift.name)}">
+      <div><span class="mh-cart-gift-badge">FREE GIFT</span><h4>${escapeHtml(gift.name)}</h4><p>₹0 × ${Math.max(1,Number(gift.quantity||1))} · Added automatically</p></div>
+      <strong>FREE</strong>
+    </article>`).join('');
+    list.innerHTML = cart.length ? `${paidLines}${giftLines}` : '<p class="empty-state">Your cart is waiting for something good.</p>';
   }
 
   function openCart() {
@@ -283,12 +323,7 @@
       const response = await fetch('/api/checkout/shiprocket/access-token', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cart: cart.map(item => ({
-          sku: item.variantSku || item.parentSku || item.sku,
-          variantSku: item.variantSku || undefined,
-          variantId: item.variantId || undefined,
-          qty: item.qty
-        })) })
+        body: JSON.stringify({ cart: checkoutPayload() })
       });
       const data = await response.json();
       if (!response.ok) throw new Error(data.error || 'Checkout could not start.');
@@ -463,7 +498,7 @@
     refreshWishlistUi();
     syncWishlist();
     if (new URLSearchParams(location.search).get('cart') === 'open') openCart();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=44-checkout-offers-1').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=45-cart-gift-lines-1').catch(() => {});
   }
 
   window.MarketHubStorefront = {

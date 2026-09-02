@@ -343,7 +343,7 @@ function shiprocketPage(url) {
   return { page, limit, from: (page - 1) * limit };
 }
 
-async function prepareShiprocketCart(request, cart) {
+async function checkoutCartWithGifts(request, cart) {
   const db=require('./db'),purchasedLines=await db.checkoutCartItems(cart);
   const subtotalInr=purchasedLines.reduce((total,line)=>total+Number(line.price||0)*Number(line.quantity||0),0);
   const userId=validCustomerSession(request);
@@ -354,6 +354,11 @@ async function prepareShiprocketCart(request, cart) {
     try{giftLines.push(...await db.checkoutCartItems([{sku,quantity:1}],undefined,{includeGiftOnly:true,freeGift:true}));}
     catch(error){console.warn(`Checkout gift ${sku} was skipped:`,error.message);}
   }
+  return {purchasedLines,giftLines,subtotalInr,hasPreviousOrder};
+}
+
+async function prepareShiprocketCart(request, cart) {
+  const {purchasedLines,giftLines}=await checkoutCartWithGifts(request,cart);
   const lines=[...purchasedLines,...giftLines];
   const seen = new Set();
   const itemQuantities = new Map();
@@ -876,6 +881,19 @@ async function handleApi(req, res, url) {
     webhookReady:Boolean(config.shiprocketCheckoutWebhookSecret)
   });
   if (req.method==='GET' && url.pathname==='/api/config/shiprocket-shipping') return sendJson(res, 200, {ready:Boolean(config.shiprocketApiEmail && config.shiprocketApiPassword && config.shiprocketChannelId),channelId:config.shiprocketChannelId || null});
+  if (req.method==='POST' && url.pathname==='/api/checkout/gift-preview') {
+    try {
+      const {cart=[]}=JSON.parse(await readBody(req));
+      const {giftLines,subtotalInr,hasPreviousOrder}=await checkoutCartWithGifts(req,cart);
+      const grouped=new Map();
+      for(const line of giftLines){
+        const key=String(line.variantSku||line.productSku);
+        const existing=grouped.get(key)||{sku:key,name:line.name,quantity:0,image:line.image||'',kind:key==='MH-GIFT-TUMBLER'?'tumbler':'mystery'};
+        existing.quantity+=Number(line.quantity||0);grouped.set(key,existing);
+      }
+      return sendJson(res,200,{subtotalInr,hasPreviousOrder,gifts:[...grouped.values()]});
+    } catch(error) { return sendJson(res,400,{error:error.message||'Gift preview is unavailable.',gifts:[]}); }
+  }
   if (req.method==='GET' && url.pathname==='/api/shipping/estimate') {
     try {
       if(delhiveryReady()) {
