@@ -358,6 +358,7 @@ async function checkoutCartWithGifts(request, cart) {
 }
 
 async function prepareShiprocketCart(request, cart) {
+  const db=require('./db');
   const {purchasedLines,giftLines}=await checkoutCartWithGifts(request,cart);
   const lines=[...purchasedLines,...giftLines];
   const seen = new Set();
