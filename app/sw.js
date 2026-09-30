@@ -1,4 +1,4 @@
-const CACHE_NAME = 'mh-v46-gift-progress-1';
+const CACHE_NAME = 'mh-v47-simple-gift-line-1';
 const CORE = [
   '/',
   '/index.html',
@@ -12,9 +12,9 @@ const CORE = [
   '/track-order.html',
   '/offline.html',
   '/manifest.webmanifest',
-  '/storefront-v40.js?v=46-gift-progress-1',
-  '/storefront-v40.css?v=46-gift-progress-1',
-  '/product.js?v=46-gift-progress-1',
+  '/storefront-v40.js?v=47-simple-gift-line-1',
+  '/storefront-v40.css?v=47-simple-gift-line-1',
+  '/product.js?v=47-simple-gift-line-1',
   '/mobile-navigation-v41-1.js?v=41.1',
   '/mobile-navigation-v41-1.css?v=41.1',
   '/auth-v41-1.js',

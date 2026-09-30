@@ -213,17 +213,14 @@
     if (giftProgress) {
       const mysteryQuantity=gifts.filter(gift=>gift.kind==='mystery').reduce((sum,gift)=>sum+Number(gift.quantity||0),0);
       const tumblerUnlocked=gifts.some(gift=>gift.kind==='tumbler');
-      const next = subtotal < 399 ? 399 : subtotal < 799 ? 799 : subtotal < 999 ? 999 : null;
       const eligibleSubtotal=Number.isFinite(Number(giftPreview?.subtotalInr))?Number(giftPreview.subtotalInr):subtotal;
       const target=eligibleSubtotal<399?399:eligibleSubtotal<799?799:eligibleSubtotal<999?999:null;
       const percent=Math.min(100,Math.max(0,eligibleSubtotal/999*100));
       const firstOrder=giftPreview?.authenticated&&giftPreview.hasPreviousOrder===false;
-      giftProgress.innerHTML = `<b>🎁 ${gifts.length ? `${mysteryQuantity ? `${mysteryQuantity} mystery gift${mysteryQuantity===1?'':'s'}` : ''}${mysteryQuantity&&tumblerUnlocked?' + ':''}${tumblerUnlocked?'free tumbler':''} added automatically` : 'Free gifts with your shopping'}</b>
+      giftProgress.innerHTML = `<b>${!cart.length?'🎁 Shop to unlock free gifts':target ? `🎁 Add ${money(target - eligibleSubtotal)} more for ${target===999?'your next gift + FREE tumbler':'your next FREE mystery gift'}` : '🎉 Top gift milestone reached!'}</b>
         <div class="mh-gift-meter" role="progressbar" aria-label="Product subtotal towards gift milestones" aria-valuemin="0" aria-valuemax="999" aria-valuenow="${Math.min(999,Math.max(0,eligibleSubtotal))}"><i style="width:${percent}%"></i></div>
-        <div class="mh-gift-milestones">${[[399,'1 gift'],[799,'2 gifts'],[999,'3 gifts + tumbler']].map(([amount,label])=>`<span class="${eligibleSubtotal>=amount?'unlocked':''}">${eligibleSubtotal>=amount?'✓':'🎁'} ₹${amount}<br>${label}</span>`).join('')}</div>
-        <span>${!cart.length?'Add a product to start unlocking gifts.':target ? `Add ${money(target - eligibleSubtotal)} more to unlock the next gift milestone.` : 'Top gift milestone reached!'}</span>
-        <small class="mh-first-order-bonus">${firstOrder&&mysteryQuantity?'🎉 Your extra first-order mystery gift is included — even on a ₹1 product order!':giftPreview?.authenticated?'First-order bonus is separate from milestone gifts.':'🎁 First order? Get 1 EXTRA mystery gift, even on a ₹1 product order. Sign in to verify your bonus.'}</small>
-        <small>${giftPreview?.unavailable?'Gift verification is temporarily unavailable. Reopen the cart to retry.':!giftPreview&&cart.length?'Checking available gifts…':'Gifts are free while stock lasts. Shipping and COD fees do not count towards milestones.'}</small>`;
+        ${firstOrder&&mysteryQuantity?'<small>✓ Your extra first-order mystery gift is included.</small>':!giftPreview?.authenticated?'<small>First order: 1 extra FREE gift, even at ₹1. Sign in to verify.</small>':''}
+        ${giftPreview?.unavailable?'<small>Gift verification unavailable. Reopen cart to retry.</small>':!giftPreview&&cart.length?'<small>Checking gifts…</small>':''}`;
     }
     const paymentPolicy = document.getElementById('cartPaymentPolicy');
     if (paymentPolicy) paymentPolicy.textContent = 'Partial COD for all order values: pay 20% in advance and the balance on delivery. A separate ₹13 COD handling fee applies once. Full COD is not available. Shipping and the final advance amount are confirmed in secure checkout.';
@@ -505,7 +502,7 @@
     refreshWishlistUi();
     syncWishlist();
     if (new URLSearchParams(location.search).get('cart') === 'open') openCart();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=46-gift-progress-1').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=47-simple-gift-line-1').catch(() => {});
   }
 
   window.MarketHubStorefront = {
