@@ -215,10 +215,14 @@
       const tumblerUnlocked=gifts.some(gift=>gift.kind==='tumbler');
       const eligibleSubtotal=Number.isFinite(Number(giftPreview?.subtotalInr))?Number(giftPreview.subtotalInr):subtotal;
       const target=eligibleSubtotal<399?399:eligibleSubtotal<799?799:eligibleSubtotal<999?999:null;
-      const percent=Math.min(100,Math.max(0,eligibleSubtotal/999*100));
+      const percent=Math.max(0,Math.min(100,eligibleSubtotal<=399?eligibleSubtotal/399*16.67:eligibleSubtotal<=799?16.67+(eligibleSubtotal-399)/400*33.33:50+(eligibleSubtotal-799)/200*33.33));
       const firstOrder=giftPreview?.authenticated&&giftPreview.hasPreviousOrder===false;
-      giftProgress.innerHTML = `<b>${!cart.length?'🎁 Shop to unlock free gifts':target ? `🎁 Add ${money(target - eligibleSubtotal)} more for ${target===999?'your next gift + FREE tumbler':'your next FREE mystery gift'}` : '🎉 Top gift milestone reached!'}</b>
-        <div class="mh-gift-meter" role="progressbar" aria-label="Product subtotal towards gift milestones" aria-valuemin="0" aria-valuemax="999" aria-valuenow="${Math.min(999,Math.max(0,eligibleSubtotal))}"><i style="width:${percent}%"></i></div>
+      giftProgress.innerHTML = `<div class="mh-reward-heading"><span>✦ THE GIFT CLUB</span><em>FREE REWARDS</em></div>
+        <b>${!cart.length?'A little shopping. A lovely surprise.':target ? `Add ${money(target - eligibleSubtotal)} more for ${target===999?'a gift + FREE tumbler':'your next FREE gift'}` : 'Your gift collection is unlocked! ✨'}</b>
+        <div class="mh-reward-path">
+          <div class="mh-gift-meter" role="progressbar" aria-label="Product subtotal towards gift milestones" aria-valuemin="0" aria-valuemax="999" aria-valuenow="${Math.min(999,Math.max(0,eligibleSubtotal))}"><i style="width:${eligibleSubtotal>=999?100:percent}%"></i></div>
+          <div class="mh-reward-stops">${[[399,'1 mystery gift'],[799,'2 mystery gifts'],[999,'3 gifts + tumbler']].map(([amount,label])=>`<div class="mh-reward-stop ${eligibleSubtotal>=amount?'is-unlocked':target===amount?'is-next':''}"><div class="mh-reward-orb"><img src="assets/${amount===999?'free-tumbler':'mystery-gift'}.png" alt="${amount===999?'Free tumbler reward':'Mystery gift reward'}"><i>${eligibleSubtotal>=amount?'✓':'✦'}</i></div><strong>₹${amount}</strong><span>${label}</span><small>${eligibleSubtotal>=amount?'UNLOCKED':target===amount?'UP NEXT':'LOCKED'}</small></div>`).join('')}</div>
+        </div>
         ${firstOrder&&mysteryQuantity?'<small>✓ Your extra first-order mystery gift is included.</small>':!giftPreview?.authenticated?'<small>First order: 1 extra FREE gift, even at ₹1. Sign in to verify.</small>':''}
         ${giftPreview?.unavailable?'<small>Gift verification unavailable. Reopen cart to retry.</small>':!giftPreview&&cart.length?'<small>Checking gifts…</small>':''}`;
     }
@@ -502,7 +506,7 @@
     refreshWishlistUi();
     syncWishlist();
     if (new URLSearchParams(location.search).get('cart') === 'open') openCart();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=47-simple-gift-line-1').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=48-gift-reward-path-1').catch(() => {});
   }
 
   window.MarketHubStorefront = {

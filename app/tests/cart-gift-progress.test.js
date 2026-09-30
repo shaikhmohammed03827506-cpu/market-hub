@@ -33,6 +33,6 @@ test('verified subtotal controls progress, not client-side price',()=>{
 });
 test('empty cart has no gifts',()=>{
   const nodes=draw(0,null,true);
-  assert.match(nodes.cartGiftProgress.innerHTML,/Shop to unlock/);
+  assert.match(nodes.cartGiftProgress.innerHTML,/A little shopping/);
   assert.doesNotMatch(nodes.cartItems.innerHTML,/FREE GIFT/);
 });
