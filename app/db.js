@@ -315,7 +315,7 @@ async function saveProduct(input, productId = null) {
     let result;
     if (productId) {
       result = await client.query(
-        `update products set category_id=$1, sku=$2, name=$3, description=$4, specifications=$5::jsonb,
+        `update products set category_id=$1, sku=$2, name=$3, description=$4, specifications=coalesce(specifications,'{}'::jsonb) || $5::jsonb,
          price_inr=$6,compare_at_price_inr=$7,stock_quantity=$8,weight_kg=$9,is_active=true,updated_at=now() where id=$10 returning id`,
         [category.rows[0].id,value.sku,value.name,value.description,specification,value.price,value.mrp,value.stock,value.weightGrams/1000,productId]
       );

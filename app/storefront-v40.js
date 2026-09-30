@@ -156,7 +156,7 @@
           <div class="cart-footer">
             <section id="cartGiftProgress" class="mh-cart-gift-progress" aria-live="polite"></section>
             <div><span>Subtotal</span><b id="cartSubtotal">₹0</b></div>
-            <small id="cartPaymentPolicy">COD includes a ₹15 handling fee. Shipping and final payment options are confirmed in secure checkout.</small>
+            <small id="cartPaymentPolicy">Partial COD: 20% advance and the balance on delivery, with a separate ₹13 COD handling fee. Full COD is not available. Shipping is shown separately in secure checkout.</small>
             <button id="checkoutButton" class="button button-primary full" type="button">Checkout securely →</button>
           </div>
         </aside><div class="drawer-backdrop" id="marketHubMiniCartBackdrop"></div>
@@ -190,7 +190,7 @@
     fetch('/api/checkout/gift-preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({cart:payload})})
       .then(response=>response.ok?response.json():Promise.reject(new Error('Gift preview unavailable')))
       .then(data=>{if(giftPreviewKey===key){giftPreview=data;renderCart();}})
-      .catch(()=>{if(giftPreviewKey===key){giftPreview={gifts:[]};renderCart();}});
+      .catch(()=>{if(giftPreviewKey===key){giftPreview={gifts:[],unavailable:true};renderCart();}});
   }
 
   function ensureStoreActions() {
@@ -205,7 +205,7 @@
     const count = cart.reduce((sum, item) => sum + Math.max(1, Number(item.qty || 1)), 0);
     const subtotal = cart.reduce((sum, item) => sum + Number(item.price || 0) * Math.max(1, Number(item.qty || 1)), 0);
     refreshGiftPreview();
-    const gifts=Array.isArray(giftPreview?.gifts) ? giftPreview.gifts : fallbackGifts(subtotal);
+    const gifts=Array.isArray(giftPreview?.gifts) ? giftPreview.gifts : [];
     document.querySelectorAll('#cartCount,.cart-count,[data-cart-count]').forEach(node => { node.textContent = count; });
     const subtotalNode = document.getElementById('cartSubtotal');
     if (subtotalNode) subtotalNode.textContent = money(subtotal);
@@ -214,14 +214,19 @@
       const mysteryQuantity=gifts.filter(gift=>gift.kind==='mystery').reduce((sum,gift)=>sum+Number(gift.quantity||0),0);
       const tumblerUnlocked=gifts.some(gift=>gift.kind==='tumbler');
       const next = subtotal < 399 ? 399 : subtotal < 799 ? 799 : subtotal < 999 ? 999 : null;
-      giftProgress.innerHTML = `<b>🎁 ${gifts.length ? `${mysteryQuantity ? `${mysteryQuantity} mystery gift${mysteryQuantity===1?'':'s'}` : ''}${mysteryQuantity&&tumblerUnlocked?' + ':''}${tumblerUnlocked?'free tumbler':''} added automatically` : 'Unlock your first mystery gift'}</b>
-        <span>${next ? `Add ${money(next - subtotal)} more for the ₹${next} gift milestone.` : 'Top milestone unlocked — your gifts are ready!'}</span>
-        <small>${giftPreview?.hasPreviousOrder===false?'Your first-order bonus gift is included.':'Free gifts are added to the secure Shiprocket checkout automatically.'}</small>`;
+      const eligibleSubtotal=Number.isFinite(Number(giftPreview?.subtotalInr))?Number(giftPreview.subtotalInr):subtotal;
+      const target=eligibleSubtotal<399?399:eligibleSubtotal<799?799:eligibleSubtotal<999?999:null;
+      const percent=Math.min(100,Math.max(0,eligibleSubtotal/999*100));
+      const firstOrder=giftPreview?.authenticated&&giftPreview.hasPreviousOrder===false;
+      giftProgress.innerHTML = `<b>🎁 ${gifts.length ? `${mysteryQuantity ? `${mysteryQuantity} mystery gift${mysteryQuantity===1?'':'s'}` : ''}${mysteryQuantity&&tumblerUnlocked?' + ':''}${tumblerUnlocked?'free tumbler':''} added automatically` : 'Free gifts with your shopping'}</b>
+        <div class="mh-gift-meter" role="progressbar" aria-label="Product subtotal towards gift milestones" aria-valuemin="0" aria-valuemax="999" aria-valuenow="${Math.min(999,Math.max(0,eligibleSubtotal))}"><i style="width:${percent}%"></i></div>
+        <div class="mh-gift-milestones">${[[399,'1 gift'],[799,'2 gifts'],[999,'3 gifts + tumbler']].map(([amount,label])=>`<span class="${eligibleSubtotal>=amount?'unlocked':''}">${eligibleSubtotal>=amount?'✓':'🎁'} ₹${amount}<br>${label}</span>`).join('')}</div>
+        <span>${!cart.length?'Add a product to start unlocking gifts.':target ? `Add ${money(target - eligibleSubtotal)} more to unlock the next gift milestone.` : 'Top gift milestone reached!'}</span>
+        <small class="mh-first-order-bonus">${firstOrder&&mysteryQuantity?'🎉 Your extra first-order mystery gift is included — even on a ₹1 product order!':giftPreview?.authenticated?'First-order bonus is separate from milestone gifts.':'🎁 First order? Get 1 EXTRA mystery gift, even on a ₹1 product order. Sign in to verify your bonus.'}</small>
+        <small>${giftPreview?.unavailable?'Gift verification is temporarily unavailable. Reopen the cart to retry.':!giftPreview&&cart.length?'Checking available gifts…':'Gifts are free while stock lasts. Shipping and COD fees do not count towards milestones.'}</small>`;
     }
     const paymentPolicy = document.getElementById('cartPaymentPolicy');
-    if (paymentPolicy) paymentPolicy.textContent = subtotal > 1499
-      ? `Partial COD available: pay 20% (${money(subtotal * .2)}) now and the balance on delivery. ₹15 COD handling fee applies.`
-      : 'Cash on Delivery is available up to ₹1,499. A ₹15 COD handling fee applies.';
+    if (paymentPolicy) paymentPolicy.textContent = 'Partial COD for all order values: pay 20% in advance and the balance on delivery. A separate ₹13 COD handling fee applies once. Full COD is not available. Shipping and the final advance amount are confirmed in secure checkout.';
     const list = document.getElementById('cartItems');
     if (!list) return;
     const paidLines=cart.map(item => {
@@ -249,6 +254,8 @@
 
   function openCart() {
     ensureCartUi();
+    giftPreviewKey='';
+    renderCart();
     document.getElementById('marketHubMiniCart').classList.add('open');
     document.getElementById('marketHubMiniCartBackdrop').classList.add('show');
     document.getElementById('marketHubMiniCart').setAttribute('aria-hidden', 'false');
@@ -498,7 +505,7 @@
     refreshWishlistUi();
     syncWishlist();
     if (new URLSearchParams(location.search).get('cart') === 'open') openCart();
-    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=45-cart-gift-lines-1').catch(() => {});
+    if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js?v=46-gift-progress-1').catch(() => {});
   }
 
   window.MarketHubStorefront = {

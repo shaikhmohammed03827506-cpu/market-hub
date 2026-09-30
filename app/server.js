@@ -892,7 +892,7 @@ async function handleApi(req, res, url) {
         const existing=grouped.get(key)||{sku:key,name:line.name,quantity:0,image:line.image||'',kind:key==='MH-GIFT-TUMBLER'?'tumbler':'mystery'};
         existing.quantity+=Number(line.quantity||0);grouped.set(key,existing);
       }
-      return sendJson(res,200,{subtotalInr,hasPreviousOrder,gifts:[...grouped.values()]});
+      return sendJson(res,200,{subtotalInr,hasPreviousOrder,authenticated:Boolean(validCustomerSession(req)),gifts:[...grouped.values()]});
     } catch(error) { return sendJson(res,400,{error:error.message||'Gift preview is unavailable.',gifts:[]}); }
   }
   if (req.method==='GET' && url.pathname==='/api/shipping/estimate') {
