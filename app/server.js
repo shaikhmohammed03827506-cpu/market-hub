@@ -456,6 +456,19 @@ async function handleApi(req, res, url) {
     if(!secureEqual(String(email).trim().toLowerCase(),config.adminEmail)||!secureEqual(String(password),config.adminPassword)) return sendJson(res,401,{authenticated:false,error:'Email or password is incorrect.'});
     res.writeHead(200,{'Content-Type':'application/json; charset=utf-8','Set-Cookie':adminCookie(req,makeAdminSession()),'Cache-Control':'no-store'});return res.end(JSON.stringify({authenticated:true}));
   }
+  if (req.method==='POST' && url.pathname==='/api/admin/email/connection-test') {
+    if(!validAdminSession(req))return sendJson(res,401,{error:'Please sign in to the admin panel first, then return here.'});
+    if(!config.publicOrigin || req.headers.origin!==config.publicOrigin)return sendJson(res,403,{error:'Use the official storefront to run this test.'});
+    try {
+      const {database}=require('./db');
+      const db=database();
+      await db.query('create table if not exists email_connection_test_guard (id integer primary key, attempted_at timestamptz not null)');
+      const slot=await db.query(`insert into email_connection_test_guard(id,attempted_at) values(1,now()) on conflict(id) do update set attempted_at=now() where email_connection_test_guard.attempted_at < now()-interval '10 minutes' returning id`);
+      if(!slot.rowCount)return sendJson(res,429,{error:'A test was attempted recently. Check Brevo logs and wait 10 minutes before retrying.'});
+      const {sendConnectionTest}=require('./.private/brevo-mail');
+      return sendJson(res,200,await sendConnectionTest());
+    }catch(error){return sendJson(res,503,{error:/^(Brevo |Email provider)/.test(error.message)?error.message:'Email test is unavailable. Check server configuration.'});}
+  }
   if (req.method==='GET' && url.pathname==='/api/auth/admin/session') return sendJson(res,200,{authenticated:validAdminSession(req)});
   if (req.method==='POST' && url.pathname==='/api/auth/admin/logout') { res.writeHead(204,{'Set-Cookie':'mh_admin_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0'});return res.end(); }
   if (req.method === 'POST' && url.pathname === '/api/auth/customer/register') {
