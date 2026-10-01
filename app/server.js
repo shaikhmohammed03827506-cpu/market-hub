@@ -102,10 +102,11 @@ const makeAdminSession = () => makeSignedSession({role:'admin',expiresAt:Date.no
 const adminCookie = (request,token) => `mh_admin_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=28800${request.headers['x-forwarded-proto']==='https'||request.socket.encrypted?'; Secure':''}`;
 const customerCookie = (request,token) => `mh_customer_session=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=2592000${request.headers['x-forwarded-proto']==='https'||request.socket.encrypted?'; Secure':''}`;
 const validCustomerSession = request => {
+  if(request.customerSessionRevoked)return null;
   const session=readSignedSession(parseCookies(request).mh_customer_session);
   return session?.role==='customer'&&/^[0-9a-f-]{36}$/i.test(String(session.userId||''))?session.userId:null;
 };
-const makeCustomerSession = userId => makeSignedSession({role:'customer',userId,expiresAt:Date.now()+30*24*60*60*1000});
+const makeCustomerSession = userId => makeSignedSession({role:'customer',userId,issuedAt:Date.now(),expiresAt:Date.now()+30*24*60*60*1000});
 
 async function razorpay(endpoint, body) {
   const authorization = Buffer.from(`${config.razorpayKeyId}:${config.razorpayKeySecret}`).toString('base64');
@@ -438,6 +439,27 @@ async function calculateCartTotal(cart) {
 }
 
 async function handleApi(req, res, url) {
+  if(req.method==='POST'&&['/api/auth/email/request','/api/auth/email/verify'].includes(url.pathname)){
+    if(!config.publicOrigin||req.headers.origin!==config.publicOrigin)return sendJson(res,403,{error:'Please use the official website.'});
+    try{
+      const raw=await readBody(req);if(raw.length>4096)return sendJson(res,400,{error:'Request too large.'});
+      const input=JSON.parse(raw),auth=require('./.private/email-auth');
+      if(url.pathname.endsWith('/request')){
+        const ip=String(req.headers['x-vercel-forwarded-for']||req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();
+        return sendJson(res,200,await auth.requestCode(input,ip));
+      }
+      const result=await auth.verifyCode(input);
+      if(result.purpose==='login'){
+        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':customerCookie(req,makeCustomerSession(result.userId))});
+        return res.end(JSON.stringify({authenticated:true}));
+      }
+      res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':'mh_customer_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Secure'});
+      return res.end(JSON.stringify({reset:true}));
+    }catch(error){
+      const safe=/^(Enter |Invalid |Use a password|Please wait|Email login is being tested|Email verification is unavailable)/.test(error.message);
+      return sendJson(res,safe?400:503,{error:safe?error.message:'Email verification is temporarily unavailable. Use password login or contact support.'});
+    }
+  }
   if (req.method === 'GET' && url.pathname === '/api/healthz') {
     return sendJson(res, 200, { ok: true, service: 'market-hub' });
   }
@@ -1013,6 +1035,13 @@ function premiumHtml(data) {
 async function requestHandler(req,res) {
   try {
     const url=new URL(req.url,`http://${req.headers.host||'localhost'}`);
+    // Check password-reset revocation once per authenticated request, including old cookies.
+    if(process.env.BREVO_API_KEY&&(url.pathname.startsWith('/api/')||url.pathname.endsWith('.html'))){
+      const session=readSignedSession(parseCookies(req).mh_customer_session);
+      if(session?.role==='customer'&&/^[0-9a-f-]{36}$/i.test(String(session.userId||''))){
+        req.customerSessionRevoked=await require('./.private/email-auth').sessionRevoked(session);
+      }
+    }
     if (url.pathname.startsWith('/api/')) { const handled=await handleApi(req,res,url); if (handled!==false) return; return sendJson(res,404,{error:'API route not found.'}); }
     let pathname=decodeURIComponent(url.pathname==='/'?'/index.html':url.pathname);
     if((pathname==='/admin.html'||pathname==='/admin-import.html')&&!validAdminSession(req)) pathname='/admin-login.html';

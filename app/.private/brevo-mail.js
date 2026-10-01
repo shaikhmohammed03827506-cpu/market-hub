@@ -19,4 +19,19 @@ async function sendConnectionTest({apiKey=process.env.BREVO_API_KEY,fetchImpl=fe
   if (!data.messageId) throw new Error('Brevo returned no message ID. Check provider logs before retrying.');
   return {accepted:true,messageId:data.messageId,recipient:TEST_EMAIL};
 }
-module.exports={sendConnectionTest,TEST_EMAIL};
+async function sendEmailCode(email,code,purpose) {
+  if(!process.env.BREVO_API_KEY)throw new Error('Email is unavailable.');
+  if(!/^\d{6}$/.test(code))throw new Error('Invalid code format.');
+  const label=purpose==='reset'?'password reset':'sign-in';
+  const response=await fetch('https://api.brevo.com/v3/smtp/email',{
+    method:'POST',redirect:'error',signal:AbortSignal.timeout(12000),
+    headers:{'api-key':process.env.BREVO_API_KEY,'Content-Type':'application/json'},
+    body:JSON.stringify({sender:{name:'MARKET HUB',email:TEST_EMAIL},to:[{email}],
+      subject:`${code} is your MARKET HUB ${label} code`,
+      textContent:`Your MARKET HUB ${label} code is ${code}. It expires in 10 minutes and works once. Do not share this code. If you did not request it, ignore this email.`,
+      htmlContent:`<h1>MARKET HUB</h1><p>Your ${label} code:</p><h2>${code}</h2><p>Expires in 10 minutes. Do not share this code. If you did not request it, ignore this email.</p>`,tags:['market-hub-email-auth']})
+  });
+  if(!response.ok)throw new Error('Email delivery request failed.');
+  const data=await response.json();if(!data.messageId)throw new Error('Email delivery request was not confirmed.');
+}
+module.exports={sendConnectionTest,sendEmailCode,TEST_EMAIL};
