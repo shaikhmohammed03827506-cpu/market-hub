@@ -439,6 +439,19 @@ async function calculateCartTotal(cart) {
 }
 
 async function handleApi(req, res, url) {
+  if(req.method==='GET'&&url.pathname==='/api/admin/email/pilot-status'){
+    if(!validAdminSession(req))return sendJson(res,401,{error:'Admin sign-in required.'});
+    try{
+      const {database}=require('./db'),{TEST_EMAIL}=require('./.private/brevo-mail');
+      const accounts=await database().query(`select count(*)::int as matches,
+        count(*) filter(where is_active=true)::int as active,
+        count(*) filter(where is_active=true and password_hash is not null and password_hash<>'')::int as eligible
+        from users where lower(email)=$1`,[TEST_EMAIL]);
+      const requests=await database().query(`select purpose,created_at,expires_at,attempts,ready,used,
+        (user_id is not null) as account_matched from customer_email_challenges where email=$1 order by created_at desc limit 3`,[TEST_EMAIL]);
+      return sendJson(res,200,{accounts:accounts.rows[0],requests:requests.rows});
+    }catch{return sendJson(res,503,{error:'Pilot diagnostic unavailable.'});}
+  }
   if(req.method==='POST'&&['/api/auth/email/request','/api/auth/email/verify'].includes(url.pathname)){
     if(!config.publicOrigin||req.headers.origin!==config.publicOrigin)return sendJson(res,403,{error:'Please use the official website.'});
     try{
