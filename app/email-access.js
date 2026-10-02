@@ -2,6 +2,9 @@
   const style=document.createElement('style');style.textContent='[hidden]{display:none!important}';document.head.append(style);
   const params=new URLSearchParams(location.search),purpose=params.get('purpose')==='reset'?'reset':'login';
   const requestForm=document.getElementById('requestCode'),verifyForm=document.getElementById('verifyCode'),status=document.getElementById('emailStatus');let challenge='',email='';
+  fetch('/api/auth/email/status',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{
+    if(data?.enabled){const note=document.querySelector('.auth-box small');if(note)note.textContent='Receive a one-time code at your registered email. Codes expire in 10 minutes. Password login is also available.';}
+  }).catch(()=>{});
   if(purpose==='reset'){document.getElementById('title').textContent='Reset your password';document.getElementById('newPasswordLabel').hidden=false;verifyForm.elements.password.required=true;document.getElementById('verifyButton').textContent='Verify code and reset password';}
   const redirect=params.get('redirect')||'/account.html',safeRedirect=/^\/(?!\/)[\w\-./?=&%#]*$/.test(redirect)?redirect:'/account.html';
   async function post(path,body){const r=await fetch(path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});const data=await r.json();if(!r.ok)throw new Error(data.error||'Please try again.');return data;}

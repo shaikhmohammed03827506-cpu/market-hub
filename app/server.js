@@ -106,7 +106,7 @@ const validCustomerSession = request => {
   const session=readSignedSession(parseCookies(request).mh_customer_session);
   return session?.role==='customer'&&/^[0-9a-f-]{36}$/i.test(String(session.userId||''))?session.userId:null;
 };
-const makeCustomerSession = userId => makeSignedSession({role:'customer',userId,issuedAt:Date.now(),expiresAt:Date.now()+30*24*60*60*1000});
+const makeCustomerSession = (userId,issuedAt=Date.now()) => makeSignedSession({role:'customer',userId,issuedAt,expiresAt:Date.now()+30*24*60*60*1000});
 
 async function razorpay(endpoint, body) {
   const authorization = Buffer.from(`${config.razorpayKeyId}:${config.razorpayKeySecret}`).toString('base64');
@@ -439,6 +439,9 @@ async function calculateCartTotal(cart) {
 }
 
 async function handleApi(req, res, url) {
+  if(req.method==='GET'&&url.pathname==='/api/auth/email/status'){
+    return sendJson(res,200,{enabled:process.env.EMAIL_OTP_ENABLED==='true'&&!!process.env.BREVO_API_KEY});
+  }
   if(req.method==='GET'&&url.pathname==='/api/admin/email/pilot-status'){
     if(!validAdminSession(req))return sendJson(res,401,{error:'Admin sign-in required.'});
     try{
@@ -461,9 +464,10 @@ async function handleApi(req, res, url) {
         const ip=String(req.headers['x-vercel-forwarded-for']||req.headers['x-forwarded-for']||req.socket.remoteAddress||'unknown').split(',')[0].trim();
         return sendJson(res,200,await auth.requestCode(input,ip));
       }
+      const issuedAt=Date.now();
       const result=await auth.verifyCode(input);
       if(result.purpose==='login'){
-        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':customerCookie(req,makeCustomerSession(result.userId))});
+        res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':customerCookie(req,makeCustomerSession(result.userId,issuedAt))});
         return res.end(JSON.stringify({authenticated:true}));
       }
       res.writeHead(200,{'Content-Type':'application/json','Cache-Control':'no-store','Set-Cookie':'mh_customer_session=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0; Secure'});
@@ -518,9 +522,10 @@ async function handleApi(req, res, url) {
     try {
       const { email='', password='' } = JSON.parse(await readBody(req));
       const { authenticateCustomer } = require('./db');
+      const issuedAt=Date.now();
       const customer = await authenticateCustomer(email, password);
       if (!customer) return sendJson(res,401,{authenticated:false,error:'Email or password is incorrect.'});
-      res.writeHead(200, {'Content-Type':'application/json; charset=utf-8','Set-Cookie':customerCookie(req, makeCustomerSession(customer.id)),'Cache-Control':'no-store'});
+      res.writeHead(200, {'Content-Type':'application/json; charset=utf-8','Set-Cookie':customerCookie(req, makeCustomerSession(customer.id,issuedAt)),'Cache-Control':'no-store'});
       return res.end(JSON.stringify({authenticated:true,customer:{fullName:customer.fullName,email:customer.email,referralCode:customer.referralCode}}));
     } catch { return sendJson(res,503,{authenticated:false,error:'Customer sign-in is not ready yet.'}); }
   }
@@ -1049,7 +1054,7 @@ async function requestHandler(req,res) {
   try {
     const url=new URL(req.url,`http://${req.headers.host||'localhost'}`);
     // Check password-reset revocation once per authenticated request, including old cookies.
-    if(process.env.BREVO_API_KEY&&(url.pathname.startsWith('/api/')||url.pathname.endsWith('.html'))){
+    if(url.pathname.startsWith('/api/')||url.pathname.endsWith('.html')){
       const session=readSignedSession(parseCookies(req).mh_customer_session);
       if(session?.role==='customer'&&/^[0-9a-f-]{36}$/i.test(String(session.userId||''))){
         req.customerSessionRevoked=await require('./.private/email-auth').sessionRevoked(session);

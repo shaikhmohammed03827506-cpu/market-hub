@@ -10,6 +10,12 @@
     const otp=document.createElement('a');otp.href='/email-access.html?redirect='+encodeURIComponent(safeRedirect());otp.textContent='Email OTP login (owner pilot)';
     const reset=document.createElement('a');reset.href='/email-access.html?purpose=reset';reset.textContent='Email password reset (owner pilot)';
     pilot.append(otp,document.createElement('br'),reset);login.after(pilot);
+    fetch('/api/auth/email/status',{cache:'no-store'}).then(r=>r.ok?r.json():null).then(data=>{
+      if(!data?.enabled)return;
+      otp.textContent='Sign in with email OTP';
+      reset.remove();
+      const forgot=login.querySelector('.forgot');if(forgot)forgot.href='/email-access.html?purpose=reset';
+    }).catch(()=>{});
   }
   if(login)login.onsubmit=async event=>{event.preventDefault();error.textContent='';const data=Object.fromEntries(new FormData(login));if(!data.login.trim()||!data.password){error.textContent='Enter your email or phone and password.';return}const button=login.querySelector('.primary');button.disabled=true;try{await request('/api/auth/customer/login',{email:data.login,password:data.password,remember:data.remember==='on'});location.replace(safeRedirect())}catch(e){error.textContent=e.message}finally{button.disabled=false}};
   const register=document.getElementById('customerRegisterForm');
