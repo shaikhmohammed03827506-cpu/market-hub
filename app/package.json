@@ -1,0 +1,13 @@
+{
+  "name": "market-hub",
+  "version": "1.0.0",
+  "private": true,
+  "description": "MARKET HUB storefront and secure commerce server",
+  "scripts": {
+    "start": "node server.js",
+    "check": "node --check server.js && node --check script.js && node --check account.js"
+  },
+  "dependencies": {
+    "pg": "^8.16.3"
+  }
+}

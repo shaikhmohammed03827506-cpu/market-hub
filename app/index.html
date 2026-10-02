@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="MARKET HUB — a smarter way to buy more and save more." />
+  <meta name="theme-color" content="#071b43" />
+  <link rel="manifest" href="manifest.webmanifest?v=43-product-variants-1" />
+  <title>MARKET HUB | Wholesale made simple</title>
+  <link rel="preconnect" href="https://images.unsplash.com" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="storefront-v40.css?v=48-gift-reward-path-1" />
+  <link rel="stylesheet" href="https://checkout-ui.shiprocket.com/assets/styles/shopify.css" />
+<link rel="stylesheet" href="/login-prompt.css?v=1"></head>
+<body>
+  <div class="announcement"><span>🎁 First order? Get a FREE mystery gift</span><span class="announcement-sep">•</span><span>🥤 Orders above ₹999 get a FREE premium tumbler</span><a href="#deals">Shop offers →</a></div>
+
+  <header class="site-header" id="top">
+    <div class="utility-bar shell"><span>Wholesale prices. Everyday value.</span><span><a href="#track">Track order</a><a href="#help">Help centre</a><a href="tel:9726281287">Call us: 97262 81287</a></span></div>
+    <div class="main-nav shell">
+      <button class="icon-btn menu-toggle" aria-label="Open menu" aria-expanded="false">☰</button>
+      <a class="brand" href="#top" aria-label="MARKET HUB home"><img src="assets/market-hub-logo.png" alt="MARKET HUB" /><span>MARKET<br /><b>HUB</b></span></a>
+      <div class="search-wrap">
+        <select aria-label="Search category"><option>All categories</option><option>Mobiles & Electronics</option><option>Home & Kitchen</option><option>Fashion</option></select>
+        <input id="searchInput" type="search" placeholder="Search products, brands and categories" autocomplete="off" />
+        <label class="photo-search" title="Search by photo">▣<input id="photoSearch" type="file" accept="image/*" aria-label="Search using a product photo" /></label>
+        <button id="voiceSearch" class="voice" aria-label="Search by voice">⌕</button>
+        <button id="searchButton" class="search-btn">Search</button>
+        <div class="suggestions" id="suggestions"></div>
+      </div>
+      <nav class="actions" aria-label="Account actions">
+        <a class="action" href="account.html"><span>♙</span><em>Hello, sign in</em><b>Account</b></a>
+        <button class="action" id="wishlistButton"><span>♡</span><em>Saved products</em><b>Wishlist <i id="wishCount">0</i></b></button>
+        <button class="action cart-action" id="cartButton"><span>🛍<i id="cartCount">0</i></span><em>Your cart</em><b>Cart</b></button>
+      </nav>
+    </div>
+    <div class="category-nav"><div class="shell"><button id="allCategories" class="all-categories">☰&nbsp; Browse Categories</button><a href="#deals">Today's Deals</a><a href="#trending">Trending</a><a href="#new">New Arrivals</a><a href="#wholesale">Wholesale</a><a href="#brands">Top Brands</a><a href="#help">Support</a><span class="nav-offer">Up to 60% off</span></div></div>
+  </header>
+
+  <main>
+    <section class="hero shell">
+      <div class="hero-copy">
+        <p class="eyebrow">MARKET HUB WHOLESALE</p>
+        <h1>More for your money.<br /><span>Every single day.</span></h1>
+        <p class="hero-text">Shop trusted everyday essentials, technology, fashion and more — with prices that make buying in bulk feel brilliant.</p>
+        <div class="hero-buttons"><a class="button button-primary" href="shop.html">Shop all products <span>→</span></a><a class="button button-ghost" href="shop.html">Browse wholesale</a></div>
+        <div class="hero-points"><span>✓ Secure checkout</span><span>✓ Quality checked</span><span>✓ Easy returns</span></div>
+      </div>
+      <div class="hero-art" aria-label="Featured sale products">
+        <div class="deal-bubble"><strong>UP TO</strong><b>60%</b><span>OFF</span></div>
+        <img class="hero-product one" alt="Wireless headphones" src="https://images.unsplash.com/photo-1505740420928-5e560c06d30e0?auto=format&fit=crop&w=520&q=85" />
+        <img class="hero-product two" alt="Modern smart watch" src="https://images.unsplash.com/photo-1546868871-7041f2a55e12?auto=format&fit=crop&w=440&q=85" />
+        <div class="hero-tag">⚡ 24-hour flash picks</div>
+      </div>
+    </section>
+
+    <section class="trust-strip"><div class="shell"><div>🚚 <span><b>Delivery in 7–8 days</b> to most locations</span></div><div>✦ <span><b>Genuine products</b> quality checked</span></div><div>🔒 <span><b>Safe payments</b> 100% protected</span></div><div>↺ <span><b>3-day returns</b> from delivery date</span></div></div></section>
+    <section class="rewards-strip"><div class="shell"><div><span class="reward-icon">✦</span><span><b>MARKET HUB Coins</b><small>Earn coins on every purchase. Use them for future savings.</small></span></div><div><span class="reward-icon wallet-icon">₹</span><span><b>Refund wallet</b><small>Refunds stay safe for 12 months.</small></span></div><a href="account.html">View wallet & rewards →</a></div></section>
+
+    <section class="section shell" id="categories"><div class="section-heading"><div><p class="eyebrow">SHOP YOUR WAY</p><h2>Explore our categories</h2></div><a href="shop.html">View all products →</a></div><div class="category-grid" id="categoryGrid"></div></section>
+
+    <section class="flash shell" id="deals"><div class="flash-head"><div><p class="eyebrow">LIMITED TIME ONLY</p><h2>Today's flash sale <span>⚡</span></h2></div><div class="countdown"><small>ENDS IN</small><b id="timer">10 : 34 : 22</b></div><a class="button button-light" href="#trending">View all deals</a></div><div class="product-grid product-grid-light" id="dealGrid"></div></section>
+
+    <section class="section shell" id="trending"><div class="section-heading"><div><p class="eyebrow">MOST LOVED RIGHT NOW</p><h2>Trending on MARKET HUB</h2></div><a href="#trending">See all products →</a></div><div class="product-grid" id="trendGrid"></div></section>
+
+    <section class="promo-pair shell" id="wholesale"><article class="promo-card dark-promo"><div><p>BUY MORE, SAVE MORE</p><h2>Wholesale<br />without the hassle.</h2><span>Unlock better prices from 3 units.</span><a href="#trending">Shop wholesale →</a></div><img src="https://images.unsplash.com/photo-1556742049-0cfed4f6a45d?auto=format&fit=crop&w=800&q=85" alt="Shopping parcels" /></article><article class="promo-card blue-promo"><div><p>MEMBERS' FAVOURITE</p><h2>Everyday tech,<br />exceptional value.</h2><span>Deals that keep life moving.</span><a href="#trending">Discover now →</a></div><img src="https://images.unsplash.com/photo-1523275335684-37898b6baf30?auto=format&fit=crop&w=650&q=85" alt="Smart watch" /></article></section>
+
+    <section class="section shell" id="new"><div class="section-heading"><div><p class="eyebrow">JUST LANDED</p><h2>New arrivals</h2></div><a href="#new">Browse new arrivals →</a></div><div class="product-grid" id="newGrid"></div></section>
+
+    <section class="section shell"><div class="why-grid"><div class="why-copy"><p class="eyebrow">THE MARKET HUB DIFFERENCE</p><h2>Thoughtful shopping,<br />better value.</h2><p>We've built a simpler way to find dependable products at meaningful prices. From a single purchase to a bulk restock, every order is made easy.</p><a class="button button-primary" href="#categories">Start shopping <span>→</span></a></div><div class="benefits"><article><span>✦</span><h3>Curated quality</h3><p>Products selected for their everyday usefulness and value.</p></article><article><span>₹</span><h3>Prices that work harder</h3><p>Competitive value with extra savings on bulk orders.</p></article><article><span>◒</span><h3>Support that stays close</h3><p>Quick help before and after you place your order.</p></article><article><span>▣</span><h3>Made for every screen</h3><p>A smooth shopping experience wherever you are.</p></article></div></div></section>
+
+    <section class="reviews shell"><p class="eyebrow">CUSTOMER STORIES</p><h2>Loved by value seekers</h2><div class="review-grid"><figure><div>★★★★★</div><blockquote>“The prices are genuinely good, delivery was quick and everything arrived perfectly packed.”</blockquote><figcaption><b>Riya S.</b><span>Verified customer</span></figcaption></figure><figure><div>★★★★★</div><blockquote>“I used the wholesale offer for my small business. The entire experience was simple and reliable.”</blockquote><figcaption><b>Arjun M.</b><span>Verified customer</span></figcaption></figure><figure><div>★★★★★</div><blockquote>“A beautifully easy store to use. I always find useful things at a much better price.”</blockquote><figcaption><b>Sana F.</b><span>Verified customer</span></figcaption></figure></div></section>
+
+    <section class="faq shell" id="help"><div><p class="eyebrow">NEED HELP?</p><h2>Questions, answered.</h2><p>Can't find what you're looking for? Our team is here for you.</p><a href="mailto:shaikhmohammed03827506@gmail.com">Contact support →</a></div><div class="accordion"><details open><summary>How do wholesale prices work?<span>+</span></summary><p>Eligible products show bulk prices directly on the product listing. Add the required quantity to unlock the offer.</p></details><details><summary>When will my order arrive?<span>+</span></summary><p>Delivery estimates appear at checkout. Your order confirmation will include tracking as soon as it ships.</p></details><details><summary>What payments do you accept?<span>+</span></summary><p>Card, UPI, wallets, net banking and cash on delivery can be enabled at checkout.</p></details></div></section>
+
+    <section class="newsletter"><div class="shell"><div><p class="eyebrow">THE GOOD STUFF, FIRST</p><h2>Get offers worth opening.</h2><p>New drops, special prices and member-only surprises — in your inbox.</p></div><form id="newsletterForm"><input type="email" required aria-label="Email address" placeholder="Enter your email address" /><button class="button button-primary">Join the list →</button></form></div></section>
+  </main>
+
+  <footer><div class="shell footer-main"><div class="footer-brand"><a class="brand" href="#top"><img src="assets/market-hub-logo.png" alt="MARKET HUB" /><span>MARKET<br /><b>HUB</b></span></a><p>A better place to discover everyday value.</p><a href="tel:9726281287">+91 97262 81287</a><a href="mailto:shaikhmohammed03827506@gmail.com">shaikhmohammed03827506@gmail.com</a></div><div><h3>Shop</h3><a href="#categories">All categories</a><a href="#deals">Today's deals</a><a href="#new">New arrivals</a><a href="#wholesale">Wholesale</a></div><div><h3>Customer care</h3><a href="#track">Track my order</a><a href="#help">FAQs</a><a href="refund-policy.html">Returns & refunds</a><a href="contact.html">Contact us</a></div><div><h3>About MARKET HUB</h3><a href="shipping-policy.html">Shipping policy</a><a href="privacy-policy.html">Privacy policy</a><a href="terms-conditions.html">Terms & conditions</a><a href="admin.html">Admin workspace</a></div></div><div class="footer-bottom shell"><span>© 2026 MARKET HUB. All rights reserved.</span><span>Made for better shopping.</span></div></footer>
+
+  <button class="whatsapp" title="Chat on WhatsApp" data-toast="WhatsApp support will open here.">◉</button><div class="toast" id="toast" role="status"></div>
+  <script src="https://checkout-ui.shiprocket.com/assets/js/channels/shopify.js"></script>
+  <link rel="stylesheet" href="smart-cart-v28.css">
+  <script src="storefront-v40.js?v=48-gift-reward-path-1"></script>
+  <script src="home-v40.js?v=43-product-variants-1"></script>
+<script src="/login-prompt.js?v=1" defer></script></body>
+</html>

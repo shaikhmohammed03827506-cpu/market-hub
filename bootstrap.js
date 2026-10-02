@@ -48,6 +48,8 @@ const smartImportV42PatchFile = path.join(__dirname, 'market-hub-v42-smart-produ
 const smartImportV42PatchMarker = path.join(appDirectory, '.market-hub-v42-smart-product-import-suite');
 const amazonImportV421PatchFile = path.join(__dirname, 'market-hub-v42-1-amazon-link-import.zip');
 const amazonImportV421PatchMarker = path.join(appDirectory, '.market-hub-v42-1-draft-publish-workflow-1');
+const deploymentReadinessPatchFile = path.join(__dirname, 'market-hub-v42-2-deployment-readiness.zip');
+const deploymentReadinessPatchMarker = path.join(appDirectory, '.market-hub-v42-2-deployment-readiness');
 const productVariantsV43PatchFile = path.join(__dirname, 'market-hub-v43-complete-product-variants.zip');
 const productVariantsV43PatchMarker = path.join(appDirectory, '.market-hub-v43-complete-product-variants-1');
 const latestAppV43PatchFile = path.join(__dirname, 'market-hub-v43-latest-app-download.zip');
@@ -213,6 +215,13 @@ function applyAmazonImportV421Patch() {
   fs.writeFileSync(amazonImportV421PatchMarker, 'v42.1 Draft publish workflow applied\n');
 }
 
+function applyDeploymentReadinessPatch() {
+  if (fs.existsSync(deploymentReadinessPatchMarker)) return;
+  if (!fs.existsSync(deploymentReadinessPatchFile)) throw new Error('Required v42.2 deployment readiness patch is missing.');
+  new AdmZip(deploymentReadinessPatchFile).extractAllTo(appDirectory, true);
+  fs.writeFileSync(deploymentReadinessPatchMarker, 'v42.2 deployment readiness applied\n');
+}
+
 function applyProductVariantsV43Patch() {
   if (fs.existsSync(productVariantsV43PatchMarker)) return;
   if (!fs.existsSync(productVariantsV43PatchFile)) throw new Error('Required v43 product variants patch is missing.');
@@ -275,6 +284,7 @@ applyOrderAccountV42Patch();
 applyNavigationV411Patch();
 applySmartImportV42Patch();
 applyAmazonImportV421Patch();
+applyDeploymentReadinessPatch();
 applyProductVariantsV43Patch();
 applyLatestAppV43Patch();
 require(path.join(appDirectory, 'server.js'));

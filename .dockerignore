@@ -1,0 +1,9 @@
+.git
+.env
+**/.env*
+node_modules
+npm-debug.log*
+pnpm-debug.log*
+*.zip
+bootstrap.js
+*.md

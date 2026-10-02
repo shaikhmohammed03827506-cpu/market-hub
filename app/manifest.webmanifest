@@ -1,0 +1,15 @@
+{
+  "id": "/",
+  "name": "MARKET HUB",
+  "short_name": "MARKET HUB",
+  "description": "Shop everyday value with MARKET HUB.",
+  "start_url": "/index.html",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f6f8fc",
+  "theme_color": "#071b43",
+  "icons": [
+    {"src":"/assets/market-hub-logo.png","sizes":"192x192","type":"image/png","purpose":"any"},
+    {"src":"/assets/market-hub-logo.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
+  ]
+}
