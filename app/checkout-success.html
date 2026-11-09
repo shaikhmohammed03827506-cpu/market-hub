@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#071b43" />
+  <title>MARKET HUB | Order update</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>body{min-height:100vh;display:grid;place-items:center;background:#f3f7fc}.order-note{width:min(560px,calc(100% - 32px));padding:42px;border-radius:20px;background:#fff;box-shadow:0 20px 60px #071b4320;text-align:center}.order-note h1{color:#071b43}.order-note p{color:#52627a;line-height:1.7}.order-note .ok{font-size:46px}</style>
+</head>
+<body>
+  <main class="order-note"><div class="ok" id="orderIcon">✓</div><h1 id="orderTitle">Checking your order</h1><p id="orderMessage">Please wait while we confirm your Shiprocket Checkout result.</p><p id="orderId"></p><a class="button button-primary" href="index.html">Continue shopping</a></main>
+  <script>
+    const params=new URLSearchParams(location.search),status=(params.get('ost')||'').toUpperCase(),orderId=params.get('oid');
+    if(status==='SUCCESS'){document.getElementById('orderTitle').textContent='Order placed successfully';document.getElementById('orderMessage').textContent='Thank you for shopping with MARKET HUB. We will share delivery tracking as soon as your order ships.';localStorage.removeItem('mh-cart');}
+    else if(status){document.getElementById('orderIcon').textContent='!';document.getElementById('orderTitle').textContent='Order was not completed';document.getElementById('orderMessage').textContent='Your payment or order was not completed. You can return to your cart and try again.';}
+    if(orderId)document.getElementById('orderId').textContent=`Order reference: ${orderId}`;
+  </script>
+  <script src="checkout-rewards-v28.js"></script>
+</body>
+</html>

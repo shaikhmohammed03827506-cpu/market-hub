@@ -1,0 +1,43 @@
+{
+  "simple": {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    "name": "Simple Mug",
+    "sku": "MUG-ONE",
+    "offers": { "@type": "Offer", "price": "399" },
+    "additionalProperty": [{ "@type": "PropertyValue", "name": "Material", "value": "Ceramic" }]
+  },
+  "oneOption": {
+    "@context": "https://schema.org",
+    "@type": "ProductGroup",
+    "name": "One-option Shirt",
+    "productGroupID": "SHIRT-GROUP",
+    "variesBy": "https://schema.org/color",
+    "hasVariant": [
+      { "@type": "Product", "name": "Blue shirt", "sku": "SHIRT-BLUE", "color": "Blue", "offers": { "price": "799", "availability": "https://schema.org/InStock" } },
+      { "@type": "Product", "name": "Red shirt", "sku": "SHIRT-RED", "color": "Red", "offers": { "price": "849", "availability": "https://schema.org/OutOfStock" } }
+    ]
+  },
+  "twoOptionsMissingCombination": {
+    "@context": "https://schema.org",
+    "@type": "ProductGroup",
+    "name": "Two-option Trainer",
+    "variesBy": ["https://schema.org/color", "https://schema.org/size"],
+    "hasVariant": [
+      { "@type": "Product", "sku": "TRAINER-B-S", "additionalProperty": [{ "name": "Color", "value": "Blue" }, { "name": "Size", "value": "S" }], "offers": { "price": "1200" } },
+      { "@type": "Product", "sku": "TRAINER-B-M", "additionalProperty": [{ "name": "Color", "value": "Blue" }, { "name": "Size", "value": "M" }], "offers": { "price": "1250" } },
+      { "@type": "Product", "sku": "TRAINER-R-S", "additionalProperty": [{ "name": "Color", "value": "Red" }, { "name": "Size", "value": "S" }], "offers": { "price": "1200" } }
+    ]
+  },
+  "threeOptions": {
+    "@context": "https://schema.org",
+    "@type": "ProductGroup",
+    "name": "Three-option Phone",
+    "variesBy": ["https://schema.org/color", "https://schema.org/size", "Storage"],
+    "hasVariant": [
+      { "@type": "Product", "sku": "PHONE-B-S-128", "color": "Black", "size": "Small", "additionalProperty": [{ "name": "Storage", "value": "128 GB" }], "offers": { "price": "19999" } },
+      { "@type": "Product", "sku": "PHONE-B-L-256", "color": "Black", "size": "Large", "additionalProperty": [{ "name": "Storage", "value": "256 GB" }], "offers": { "price": "22999" } },
+      { "@type": "Product", "sku": "PHONE-W-S-128", "color": "White", "size": "Small", "additionalProperty": [{ "name": "Storage", "value": "128 GB" }], "offers": { "price": "20499" } }
+    ]
+  }
+}
